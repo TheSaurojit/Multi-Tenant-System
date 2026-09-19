@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum Plan {
+  FREE
+  PRO
+  ADVANCED
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum DatasetType {
+  SALES
+  MARKETING
+  CUSTOM
+}
+
+enum DatasetStatus {
+  UPLOADING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AuditAction {
+  USER_INVITED
+  INVITE_REVOKED
+  INVITE_ACCEPTED
+  MEMBER_REMOVED
+  ROLE_CHANGED
+  DATASET_UPLOADED
+  DATASET_DELETED
+  REPORT_CREATED
+  REPORT_DELETED
+  PLAN_UPGRADED
+  SETTINGS_UPDATED
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  name            String
+  passwordHash    String
+  avatarUrl       String?
+  memberships     Membership[]
+  invitationsSent Invitation[]   @relation("InvitedByUser")
+  datasets        Dataset[]
+  reports         SavedReport[]
+  auditLogs       AuditLog[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model Organization {
+  id                   String             @id @default(cuid())
+  name                 String
+  slug                 String             @unique
+  plan                 Plan               @default(FREE)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  stripePriceId        String?
+  subscriptionStatus   SubscriptionStatus @default(INACTIVE)
+  currentPeriodEnd     DateTime?
+  memberships          Membership[]
+  invitations          Invitation[]
+  workspaces           Workspace[]
+  datasets             Dataset[]
+  dataPoints           DataPoint[]
+  reports              SavedReport[]
+  auditLogs            AuditLog[]
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
+
+model Workspace {
+  id             String        @id @default(cuid())
+  name           String
+  slug           String
+  description    String?
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  datasets       Dataset[]
+  dataPoints     DataPoint[]
+  reports        SavedReport[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role         @default(MEMBER)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([userId, organizationId])
+}
+
+model Invitation {
+  id             String           @id @default(cuid())
+  email          String
+  role           Role             @default(MEMBER)
+  token          String           @unique
+  organizationId String
+  invitedById    String
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy      User             @relation("InvitedByUser", fields: [invitedById], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model Dataset {
+  id             String        @id @default(cuid())
+  name           String
+  type           DatasetType   @default(SALES)
+  fileSize       Int
+  rowCount       Int           @default(0)
+  status         DatasetStatus @default(PROCESSING)
+  errorMessage   String?
+  organizationId String
+  workspaceId    String
+  uploadedById   String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy     User          @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  dataPoints     DataPoint[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([workspaceId])
+}
+
+model DataPoint {
+  id             String       @id @default(cuid())
+  datasetId      String
+  organizationId String
+  workspaceId    String
+  date           DateTime
+  category       String
+  subCategory    String?
+  metric1        Float        @default(0) // Sales: Revenue, Marketing: Spend
+  metric2        Float        @default(0) // Sales: Cost, Marketing: Impressions/Clicks
+  metric3        Float        @default(0) // Sales: Units Sold, Marketing: Conversions
+  region         String?
+  channel        String?
+  metadata       Json?
+  dataset        Dataset      @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, date])
+  @@index([organizationId, category])
+  @@index([workspaceId, date])
+  @@index([workspaceId, category])
+}
+
+model SavedReport {
+  id             String       @id @default(cuid())
+  name           String
+  description    String?
+  filters        Json
+  organizationId String
+  workspaceId    String
+  createdById    String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy      User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([workspaceId])
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         AuditAction
+  entityType     String
+  entityId       String?
+  details        Json?
+  ipAddress      String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+}

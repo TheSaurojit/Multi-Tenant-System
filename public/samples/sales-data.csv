@@ -1,0 +1,21 @@
+Date,Category,Product,Revenue,Cost,UnitsSold,Region
+2026-08-01,Enterprise Software,Cloud ERP Suite,24500,4200,5,North America
+2026-08-03,Hardware Solutions,Workstation Pro X,18200,8900,12,EMEA
+2026-08-05,Cloud Services,Managed Kubernetes,12400,2100,24,North America
+2026-08-07,Consulting,Architecture Review,8500,1800,2,APAC
+2026-08-10,Enterprise Software,Security Shield AI,31200,5100,8,North America
+2026-08-12,Hardware Solutions,Edge Computing Gateway,9800,4500,10,EMEA
+2026-08-14,Cloud Services,Database Replication Cluster,15600,2800,16,APAC
+2026-08-17,Consulting,Compliance Audit,14000,2900,3,North America
+2026-08-19,Enterprise Software,DevOps Pipeline Pro,19800,3300,9,EMEA
+2026-08-22,Hardware Solutions,High-Speed Fiber Switch,11500,5400,7,North America
+2026-08-25,Cloud Services,Serverless Functions Pool,8900,1400,28,APAC
+2026-08-28,Enterprise Software,Data Warehouse Connector,27400,4600,6,North America
+2026-08-30,Hardware Solutions,Storage Array NVMe,22900,10500,4,EMEA
+2026-09-02,Cloud Services,Global CDN Acceleration,13700,2200,19,North America
+2026-09-04,Enterprise Software,Cloud ERP Suite,26000,4300,5,APAC
+2026-09-07,Hardware Solutions,Workstation Pro X,16500,8100,11,North America
+2026-09-09,Consulting,DevOps Transformation,19500,3800,4,EMEA
+2026-09-11,Enterprise Software,Security Shield AI,33500,5400,9,North America
+2026-09-14,Cloud Services,Managed Kubernetes,14200,2300,26,APAC
+2026-09-16,Hardware Solutions,Edge Computing Gateway,10400,4800,11,North America
