@@ -74,12 +74,12 @@ export function BillingManagementView({
     }
   }
 
-  const handleSimulateSwitch = async (plan: Plan) => {
-    setLoadingPlan(plan)
-    await simulatePlanChangeAction(plan)
-    setLoadingPlan(null)
-    setNotice(`Test Mode: Switched active plan to ${PLAN_CONFIGS[plan].name} (${PLAN_CONFIGS[plan].formattedPrice}/month).`)
-  }
+  // const handleSimulateSwitch = async (plan: Plan) => {
+  //   setLoadingPlan(plan)
+  //   await simulatePlanChangeAction(plan)
+  //   setLoadingPlan(null)
+  //   setNotice(`Test Mode: Switched active plan to ${PLAN_CONFIGS[plan].name} (${PLAN_CONFIGS[plan].formattedPrice}/month).`)
+  // }
 
   return (
     <div className="space-y-6">
@@ -332,7 +332,7 @@ export function BillingManagementView({
               </div>
             </div>
 
-            {currentPlan !== 'FREE' && isOwnerOrAdmin && (
+            {/* {currentPlan !== 'FREE' && isOwnerOrAdmin && (
               <Button
                 variant="outline"
                 size="sm"
@@ -342,7 +342,7 @@ export function BillingManagementView({
               >
                 Downgrade to Free (₹0/mo)
               </Button>
-            )}
+            )} */}
           </div>
 
           {/* 2. PRO PLAN - ₹1,499/mo */}
@@ -542,7 +542,7 @@ export function BillingManagementView({
         <p className="text-amber-700 dark:text-amber-400 leading-normal">
           Test-mode Stripe checkout supports INR (₹) transactions. Use the quick switcher below to test immediate plan changes and quota enforcement for <strong>Free (₹0)</strong>, <strong>Pro (₹1,499)</strong>, and <strong>Advanced (₹4,999)</strong>.
         </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/* <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-zinc-500 font-medium">Quick Plan Switcher:</span>
           <button
             onClick={() => handleSimulateSwitch('FREE')}
@@ -562,7 +562,7 @@ export function BillingManagementView({
           >
             Switch to Advanced (₹4,999)
           </button>
-        </div>
+        </div> */}
       </div>
     </div>
   )
