@@ -1,13 +1,12 @@
 import "server-only";
+import "dotenv/config";
 
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from "../../generated/prisma";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  'postgresql://saas_user:saas_password@localhost:5432/saas_analytics?schema=public'
+const connectionString = process.env.DATABASE_URL 
 
 const adapter = new PrismaPg({ connectionString })
 
