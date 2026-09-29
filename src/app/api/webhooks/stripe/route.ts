@@ -12,12 +12,20 @@ export async function POST(req: NextRequest) {
   let event: Stripe.Event
 
   try {
-    if (!webhookSecret || webhookSecret.includes('placeholder') || !sig) {
-      // Direct parse for simulated webhook tests
-      event = JSON.parse(body) as Stripe.Event
-    } else {
-      event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
+    if (!webhookSecret || webhookSecret.includes('placeholder')) {
+      console.error('Webhook Error: STRIPE_WEBHOOK_SECRET is not configured or still has a placeholder value in .env')
+      return NextResponse.json(
+        { error: 'STRIPE_WEBHOOK_SECRET is not configured. Please add the secret from `stripe listen` to your .env file.' },
+        { status: 500 }
+      )
     }
+
+    if (!sig) {
+      console.error('Webhook Error: Missing stripe-signature header')
+      return NextResponse.json({ error: 'Missing stripe-signature header' }, { status: 400 })
+    }
+
+    event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
   } catch (err: any) {
     console.error(`Webhook signature verification failed: ${err.message}`)
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 })
@@ -31,6 +39,18 @@ export async function POST(req: NextRequest) {
         const plan = session.metadata?.plan as any
 
         if (organizationId && plan) {
+          let periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          if (session.subscription) {
+            try {
+              const sub = await stripe.subscriptions.retrieve(session.subscription as string)
+              if ((sub as any)?.current_period_end) {
+                periodEnd = new Date((sub as any).current_period_end * 1000)
+              }
+            } catch (e) {
+              console.warn('Could not fetch subscription period end:', e)
+            }
+          }
+
           await prisma.organization.update({
             where: { id: organizationId },
             data: {
@@ -38,7 +58,7 @@ export async function POST(req: NextRequest) {
               subscriptionStatus: 'ACTIVE',
               stripeCustomerId: session.customer as string,
               stripeSubscriptionId: session.subscription as string,
-              currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              currentPeriodEnd: periodEnd,
             },
           })
 
@@ -47,8 +67,15 @@ export async function POST(req: NextRequest) {
             action: 'PLAN_UPGRADED',
             entityType: 'Organization',
             entityId: organizationId,
-            details: { plan, stripeCustomerId: session.customer },
+            details: {
+              plan,
+              stripeCustomerId: session.customer,
+              stripeSubscriptionId: session.subscription,
+              event: 'checkout.session.completed (webhook)',
+            },
           })
+
+          console.log(`[Stripe Webhook] ✅ checkout.session.completed: Organization ${organizationId} upgraded to ${plan}`)
         }
         break
       }
@@ -70,6 +97,7 @@ export async function POST(req: NextRequest) {
                 : undefined,
             },
           })
+          console.log(`[Stripe Webhook] ✅ customer.subscription.updated: Org ${org.id} status is now ${status}`)
         }
         break
       }
@@ -94,8 +122,30 @@ export async function POST(req: NextRequest) {
             action: 'PLAN_UPGRADED',
             entityType: 'Organization',
             entityId: org.id,
-            details: { newPlan: 'FREE', reason: 'Subscription cancelled in Stripe' },
+            details: { newPlan: 'FREE', reason: 'Subscription cancelled in Stripe (webhook)' },
           })
+          console.log(`[Stripe Webhook] ✅ customer.subscription.deleted: Org ${org.id} downgraded to FREE`)
+        }
+        break
+      }
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice
+        const subscriptionId = (invoice as any).subscription as string
+        if (subscriptionId) {
+          const org = await prisma.organization.findFirst({
+            where: { stripeSubscriptionId: subscriptionId },
+          })
+          if (org) {
+            await prisma.organization.update({
+              where: { id: org.id },
+              data: {
+                subscriptionStatus: 'ACTIVE',
+                currentPeriodEnd: invoice.period_end ? new Date(invoice.period_end * 1000) : undefined,
+              },
+            })
+            console.log(`[Stripe Webhook] ✅ invoice.payment_succeeded: Renewed subscription for Org ${org.id}`)
+          }
         }
         break
       }
