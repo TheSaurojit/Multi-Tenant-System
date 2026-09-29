@@ -16,7 +16,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Plan } from '@prisma/client'
 import { PLAN_CONFIGS, PlanLimits } from '@/lib/plans'
 import {
   checkoutPlanAction,
@@ -24,6 +23,7 @@ import {
 } from '@/app/actions/billing-actions'
 import { CurrentUser } from '@/lib/auth'
 import { useAuth } from '@/contexts/auth-context'
+import { Plan } from '../../../generated/prisma'
 
 interface BillingManagementViewProps {
   currentPlan: Plan

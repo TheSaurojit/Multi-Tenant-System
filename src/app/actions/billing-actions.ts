@@ -5,9 +5,9 @@ import { prisma } from '@/lib/db'
 import { assertPermission } from '@/lib/permissions'
 import { logAuditEvent } from '@/lib/audit'
 import { createCheckoutSession, createBillingPortalSession } from '@/lib/stripe'
-import { Plan } from '@prisma/client'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { Plan } from '../../../generated/prisma'
 
 export async function checkoutPlanAction(plan: Plan) {
   const user = await requireAuthUser()

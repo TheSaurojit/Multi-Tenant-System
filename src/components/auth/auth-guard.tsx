@@ -2,11 +2,11 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { Role, Plan } from '@prisma/client'
 import { AppPermission } from '@/lib/permissions'
 import { useAuth } from '@/contexts/auth-context'
 import { ShieldAlert, ArrowLeft, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Plan, Role } from '../../../generated/prisma'
 
 const PLAN_HIERARCHY: Record<Plan, number> = {
   FREE: 1,

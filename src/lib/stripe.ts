@@ -1,8 +1,8 @@
 import "server-only";
 import Stripe from 'stripe'
 import { prisma } from './db'
-import { Plan } from '@prisma/client'
 import { logAuditEvent } from './audit'
+import { Plan } from "../../generated/prisma";
 
 const isConfigured =
   process.env.STRIPE_SECRET_KEY &&

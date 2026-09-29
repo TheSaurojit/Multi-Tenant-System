@@ -1,4 +1,4 @@
-import { Plan } from '@prisma/client'
+import { Plan } from '../../generated/prisma'
 import { prisma } from './db'
 import { PLAN_CONFIGS, PlanLimits, getPlanLimits } from './plans'
 

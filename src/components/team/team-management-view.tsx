@@ -25,8 +25,8 @@ import {
   updateMemberRoleAction,
   removeMemberAction,
 } from '@/app/actions/team-actions'
-import { Role } from '@prisma/client'
 import Link from 'next/link'
+import { Role } from '../../../generated/prisma'
 
 interface TeamManagementViewProps {
   members: any[]

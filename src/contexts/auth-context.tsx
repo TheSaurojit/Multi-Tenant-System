@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useTransition } from 'react'
 import { CurrentUser } from '@/lib/auth'
-import { Role, Plan } from '@prisma/client'
+import { Role, Plan } from '../../generated/prisma'
 import { AppPermission, hasPermission } from '@/lib/permissions'
 import { switchWorkspaceAction, switchOrganizationAction, logoutAction } from '@/app/actions/auth-actions'
 

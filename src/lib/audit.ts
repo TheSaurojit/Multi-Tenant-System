@@ -1,5 +1,5 @@
 import { prisma } from './db'
-import { AuditAction, Prisma } from '@prisma/client'
+import { AuditAction, Prisma } from '../../generated/prisma'
 import { headers } from 'next/headers'
 
 interface LogAuditParams {

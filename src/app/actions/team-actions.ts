@@ -5,9 +5,9 @@ import { prisma } from '@/lib/db'
 import { assertPermission } from '@/lib/permissions'
 import { logAuditEvent } from '@/lib/audit'
 import { checkFeatureLimit } from '@/lib/feature-limits'
-import { Role } from '@prisma/client'
 import crypto from 'crypto'
 import { revalidatePath } from 'next/cache'
+import { Role } from '../../../generated/prisma'
 
 export async function inviteMemberAction({
   email,

@@ -15,7 +15,7 @@ import {
   Settings,
   Terminal,
 } from 'lucide-react'
-import { AuditAction, Prisma } from '@prisma/client'
+import { AuditAction, Prisma } from '../../../.././../generated/prisma'
 
 export default async function AuditLogsPage({
   searchParams,

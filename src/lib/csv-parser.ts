@@ -1,5 +1,5 @@
 import Papa from 'papaparse'
-import { DatasetType } from '@prisma/client'
+import { DatasetType } from '../../generated/prisma'
 
 export interface ParsedDataPoint {
   date: Date

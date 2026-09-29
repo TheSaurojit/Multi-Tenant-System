@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { cache } from 'react'
 import { prisma } from './db'
-import { Role, Plan } from '@prisma/client'
+import { Role, Plan } from '../../generated/prisma'
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'multi-tenant-saas-jwt-secret-key-32-chars-long'
