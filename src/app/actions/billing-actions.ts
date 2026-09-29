@@ -63,7 +63,7 @@ export async function openBillingPortalAction() {
   redirect(session.url)
 }
 
-export async function simulatePlanChangeAction(newPlan: Plan) {
+ async function simulatePlanChangeAction(newPlan: Plan) {
   const user = await requireAuthUser()
 
   assertPermission(user.role, 'billing:manage')
@@ -71,8 +71,8 @@ export async function simulatePlanChangeAction(newPlan: Plan) {
   const org = await prisma.organization.update({
     where: { id: user.activeOrgId },
     data: {
-      plan: newPlan,
-      subscriptionStatus: newPlan === 'FREE' ? 'INACTIVE' : 'ACTIVE',
+      plan: "FREE",
+      subscriptionStatus:   'ACTIVE',
       currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     },
   })

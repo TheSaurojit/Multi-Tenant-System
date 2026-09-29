@@ -21,7 +21,6 @@ import { PLAN_CONFIGS, PlanLimits } from '@/lib/plans'
 import {
   checkoutPlanAction,
   openBillingPortalAction,
-  simulatePlanChangeAction,
 } from '@/app/actions/billing-actions'
 import { CurrentUser } from '@/lib/auth'
 import { useAuth } from '@/contexts/auth-context'
@@ -532,38 +531,7 @@ export function BillingManagementView({
           </div>
         </div>
       </div>
-
-      {/* Test Mode Guidance & Fast Switcher */}
-      <div className="p-5 rounded-xl border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 text-xs">
-        <div className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-300 mb-2">
-          <Clock className="w-4 h-4" />
-          <span>Stripe Test-Mode & Sandbox Simulation</span>
-        </div>
-        <p className="text-amber-700 dark:text-amber-400 leading-normal">
-          Test-mode Stripe checkout supports INR (₹) transactions. Use the quick switcher below to test immediate plan changes and quota enforcement for <strong>Free (₹0)</strong>, <strong>Pro (₹1,499)</strong>, and <strong>Advanced (₹4,999)</strong>.
-        </p>
-        {/* <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-zinc-500 font-medium">Quick Plan Switcher:</span>
-          <button
-            onClick={() => handleSimulateSwitch('FREE')}
-            className="px-2.5 py-1 rounded bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 cursor-pointer font-medium"
-          >
-            Switch to Free (₹0)
-          </button>
-          <button
-            onClick={() => handleSimulateSwitch('PRO')}
-            className="px-2.5 py-1 rounded bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer font-medium"
-          >
-            Switch to Pro (₹1,499)
-          </button>
-          <button
-            onClick={() => handleSimulateSwitch('ADVANCED')}
-            className="px-2.5 py-1 rounded bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 text-purple-700 dark:text-purple-300 hover:bg-purple-100 cursor-pointer font-medium"
-          >
-            Switch to Advanced (₹4,999)
-          </button>
-        </div> */}
-      </div>
+     
     </div>
   )
 }
