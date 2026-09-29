@@ -16,7 +16,11 @@ import { logAuditEvent } from '@/lib/audit'
 import { checkFeatureLimit } from '@/lib/feature-limits'
 
 export async function loginAction( formData: FormData) {
+const users = await prisma.user.findMany();
+
+  console.log(users , "userssssss\n\n");
   
+
   const email = formData.get('email') as string
   const password = formData.get('password') as string
 

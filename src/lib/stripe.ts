@@ -1,19 +1,21 @@
+import "server-only";
 import Stripe from 'stripe'
 import { prisma } from './db'
 import { Plan } from '@prisma/client'
+import { logAuditEvent } from './audit'
 
 const isConfigured =
   process.env.STRIPE_SECRET_KEY &&
   !process.env.STRIPE_SECRET_KEY.includes('placeholder')
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock_secret', {
-  apiVersion: '2025-02-24.acacia' as any,
+  apiVersion: '2026-08-26.dahlia'
 })
 
 export const PRICE_IDS: Record<Plan, string | undefined> = {
   FREE: undefined,
-  PRO: process.env.STRIPE_PRO_PRICE_ID || 'price_mock_pro_inr_monthly',
-  ADVANCED: process.env.STRIPE_ADVANCED_PRICE_ID || 'price_mock_advanced_inr_monthly',
+  PRO: process.env.STRIPE_PRO_PRICE_ID ,
+  ADVANCED: process.env.STRIPE_ADVANCED_PRICE_ID 
 }
 
 export async function createCheckoutSession({
@@ -57,7 +59,22 @@ export async function createCheckoutSession({
 
   // Real Stripe Test-Mode Session
   let customerId = org.stripeCustomerId
-  if (!customerId) {
+
+  // If customer ID is missing, simulated, or does not exist in your real Stripe account, create a real customer
+  let needsNewCustomer = !customerId || customerId.startsWith('cus_simulated')
+
+  if (!needsNewCustomer && customerId) {
+    try {
+      const existingCustomer = await stripe.customers.retrieve(customerId)
+      if (existingCustomer.deleted) {
+        needsNewCustomer = true
+      }
+    } catch {
+      needsNewCustomer = true
+    }
+  }
+
+  if (needsNewCustomer) {
     const customer = await stripe.customers.create({
       email: userEmail,
       metadata: {
@@ -72,11 +89,23 @@ export async function createCheckoutSession({
     })
   }
 
-  const priceId = PRICE_IDS[plan]
+  let priceId = PRICE_IDS[plan]
   if (!priceId) throw new Error(`Invalid plan: ${plan}`)
 
+  // If a Product ID (prod_...) was configured instead of a Price ID (price_...), resolve the active price automatically
+  if (priceId.startsWith('prod_')) {
+    try {
+      const prices = await stripe.prices.list({ product: priceId, active: true, limit: 1 })
+      if (prices.data.length > 0) {
+        priceId = prices.data[0].id
+      }
+    } catch (e) {
+      console.warn('Could not auto-resolve price for product ID:', priceId, e)
+    }
+  }
+
   const session = await stripe.checkout.sessions.create({
-    customer: customerId,
+    customer: customerId || undefined,
     mode: 'subscription',
     payment_method_types: ['card'],
     line_items: [
@@ -117,10 +146,56 @@ export async function createBillingPortalSession({
     }
   }
 
-  const session = await stripe.billingPortal.sessions.create({
-    customer: org.stripeCustomerId,
-    return_url: returnUrl,
-  })
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: org.stripeCustomerId,
+      return_url: returnUrl,
+    })
 
-  return { url: session.url, simulated: false }
+    return { url: session.url, simulated: false }
+  } catch (err) {
+    console.warn('Stripe billing portal creation failed, falling back:', err)
+    return {
+      url: `${returnUrl}?portal=simulated`,
+      simulated: true,
+    }
+  }
 }
+
+export async function verifyAndSyncCheckoutSession(sessionId: string, organizationId: string) {
+  if (!sessionId || sessionId.startsWith('simulated_') || !isConfigured) return null
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId)
+    if (session.payment_status === 'paid' || session.status === 'complete') {
+      const plan = session.metadata?.plan as Plan
+      if (plan && session.metadata?.organizationId === organizationId) {
+        await prisma.organization.update({
+          where: { id: organizationId },
+          data: {
+            plan,
+            subscriptionStatus: 'ACTIVE',
+            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: session.subscription as string,
+            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        })
+
+        await logAuditEvent({
+          organizationId,
+          action: 'PLAN_UPGRADED',
+          entityType: 'Organization',
+          entityId: organizationId,
+          details: { plan, stripeCustomerId: session.customer, source: 'checkout_redirect_sync' },
+        })
+
+        return { success: true, plan }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to sync checkout session on redirect return:', err)
+  }
+
+  return null
+}
+

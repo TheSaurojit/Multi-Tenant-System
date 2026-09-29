@@ -25,6 +25,13 @@ export async function inviteMemberAction({
   if (!normalizedEmail || !normalizedEmail.includes('@')) {
     return { error: 'Please enter a valid email address.' }
   }
+  // Check  if user email exists or not 
+  const userEmail = await prisma.user.findFirst({
+    where : { email : normalizedEmail}
+  })
+   if (!userEmail) {
+    return { error: "No user exists with this email" }
+  } 
 
   // Check plan member limit
   const limitCheck = await checkFeatureLimit(user.activeOrgId, 'members')

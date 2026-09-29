@@ -25,13 +25,9 @@ import {
   switchWorkspaceAction,
   switchOrganizationAction,
   logoutAction,
-  createWorkspaceAction,
-  createOrganizationAction,
 } from '@/app/actions/auth-actions'
 import { getRoleBadgeClass } from '@/lib/permissions'
 import { PLAN_CONFIGS } from '@/lib/plans'
-import { Modal } from '@/components/ui/modal'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
 interface SidebarProps {
@@ -51,18 +47,9 @@ export function Sidebar({
 
   // Organization dropdown state
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false)
-  const [isNewOrgModalOpen, setIsNewOrgModalOpen] = useState(false)
-  const [newOrgName, setNewOrgName] = useState('')
-  const [isCreatingOrg, setIsCreatingOrg] = useState(false)
-  const [createOrgError, setCreateOrgError] = useState<string | null>(null)
 
   // Workspace dropdown state
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false)
-  const [isNewWorkspaceModalOpen, setIsNewWorkspaceModalOpen] = useState(false)
-  const [newWorkspaceName, setNewWorkspaceName] = useState('')
-  const [newWorkspaceDesc, setNewWorkspaceDesc] = useState('')
-  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false)
-  const [createWorkspaceError, setCreateWorkspaceError] = useState<string | null>(null)
 
   const activeMembership = currentUser.memberships.find(
     (m) => m.orgId === currentUser.activeOrgId
@@ -129,55 +116,6 @@ export function Sidebar({
     onClose?.()
     if (workspaceId !== currentUser.activeWorkspaceId) {
       await switchWorkspaceAction(workspaceId)
-    }
-  }
-
-  const handleCreateOrg = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newOrgName.trim()) return
-    setIsCreatingOrg(true)
-    setCreateOrgError(null)
-
-    const formData = new FormData()
-    formData.append('name', newOrgName)
-
-    try {
-      const res = await createOrganizationAction(formData)
-      if (res?.error) {
-        setCreateOrgError(res.error)
-        setIsCreatingOrg(false)
-      } else {
-        setIsNewOrgModalOpen(false)
-      }
-    } catch {
-      // Redirect happens in server action
-    }
-  }
-
-  const handleCreateWorkspace = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newWorkspaceName.trim()) return
-    setIsCreatingWorkspace(true)
-    setCreateWorkspaceError(null)
-
-    const formData = new FormData()
-    formData.append('name', newWorkspaceName)
-    if (newWorkspaceDesc.trim()) {
-      formData.append('description', newWorkspaceDesc)
-    }
-
-    try {
-      const res = await createWorkspaceAction(formData)
-      if (res?.error) {
-        setCreateWorkspaceError(res.error)
-        setIsCreatingWorkspace(false)
-      } else {
-        setIsNewWorkspaceModalOpen(false)
-        setNewWorkspaceName('')
-        setNewWorkspaceDesc('')
-      }
-    } catch {
-      // Redirect happens in server action
     }
   }
 
@@ -251,7 +189,7 @@ export function Sidebar({
 
             {/* Org Dropdown Menu */}
             {orgDropdownOpen && (
-              <div className="absolute top-16 left-0 right-0 z-50 bg-white dark:bg-zinc-850 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 py-1.5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute top-16 left-0 right-0 z-50 bg-black dark:bg-zinc-850 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 py-1.5 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
                   Organizations
                 </div>
@@ -276,16 +214,17 @@ export function Sidebar({
                   ))}
                 </div>
                 <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1 px-1">
-                  <button
+                  <Link
+                    href="/organization/create"
                     onClick={() => {
                       setOrgDropdownOpen(false)
-                      setIsNewOrgModalOpen(true)
+                      onClose?.()
                     }}
                     className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-lg transition-colors font-medium"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     New Organization
-                  </button>
+                  </Link>
                 </div>
               </div>
             )}
@@ -320,7 +259,7 @@ export function Sidebar({
 
             {/* Workspace Dropdown Menu */}
             {workspaceDropdownOpen && (
-              <div className="absolute top-16 left-0 right-0 z-50 bg-white dark:bg-zinc-850 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 py-1.5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute top-16 left-0 right-0 z-50 bg-black dark:bg-zinc-850 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 py-1.5 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-3 py-1.5 flex items-center justify-between text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
                   <span>Workspaces ({workspacesCount})</span>
                   <span className="font-mono">
@@ -361,16 +300,17 @@ export function Sidebar({
                       <span className="text-[10px] font-bold">Limit Reached</span>
                     </Link>
                   ) : (
-                    <button
+                    <Link
+                      href="/workspace/create"
                       onClick={() => {
                         setWorkspaceDropdownOpen(false)
-                        setIsNewWorkspaceModalOpen(true)
+                        onClose?.()
                       }}
                       className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-lg transition-colors font-medium"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       New Workspace
-                    </button>
+                    </Link>
                   )}
                 </div>
               </div>
@@ -428,100 +368,6 @@ export function Sidebar({
           </form>
         </div>
       </aside>
-
-      {/* New Organization Modal */}
-      <Modal
-        isOpen={isNewOrgModalOpen}
-        onClose={() => setIsNewOrgModalOpen(false)}
-        title="Register New Organization"
-        description="Organizations hold your company billing subscription, invoices, and shared team memberships."
-      >
-        <form onSubmit={handleCreateOrg} className="space-y-4">
-          {createOrgError && (
-            <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs border border-red-200 dark:border-red-900/60">
-              {createOrgError}
-            </div>
-          )}
-          <div>
-            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Organization Name
-            </label>
-            <input
-              type="text"
-              required
-              value={newOrgName}
-              onChange={(e) => setNewOrgName(e.target.value)}
-              placeholder="e.g. Acme Corporation"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsNewOrgModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" isLoading={isCreatingOrg}>
-              Create Organization
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* New Workspace Modal */}
-      <Modal
-        isOpen={isNewWorkspaceModalOpen}
-        onClose={() => setIsNewWorkspaceModalOpen(false)}
-        title={`New Workspace in ${currentUser.activeOrgName}`}
-        description={`Workspaces isolate project datasets and reports within ${currentUser.activeOrgName}. Plan quota: ${workspacesCount}/${planLimits.maxWorkspaces >= 100 ? 'Unlimited' : planLimits.maxWorkspaces}.`}
-      >
-        <form onSubmit={handleCreateWorkspace} className="space-y-4">
-          {createWorkspaceError && (
-            <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs border border-red-200 dark:border-red-900/60">
-              {createWorkspaceError}
-            </div>
-          )}
-          <div>
-            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Workspace Name
-            </label>
-            <input
-              type="text"
-              required
-              value={newWorkspaceName}
-              onChange={(e) => setNewWorkspaceName(e.target.value)}
-              placeholder="e.g. Growth Marketing Labs"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Description (Optional)
-            </label>
-            <input
-              type="text"
-              value={newWorkspaceDesc}
-              onChange={(e) => setNewWorkspaceDesc(e.target.value)}
-              placeholder="e.g. Q4 campaign analytics and retention tracking"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsNewWorkspaceModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" isLoading={isCreatingWorkspace}>
-              Create Workspace
-            </Button>
-          </div>
-        </form>
-      </Modal>
     </>
   )
 }

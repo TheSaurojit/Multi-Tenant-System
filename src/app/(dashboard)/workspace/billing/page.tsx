@@ -3,9 +3,21 @@ import { requireAuthUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { redirect } from 'next/navigation'
 import { BillingManagementView } from '@/components/billing/billing-management-view'
+import { verifyAndSyncCheckoutSession } from '@/lib/stripe'
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
   const currentUser = await requireAuthUser()
+  const resolvedParams = searchParams ? await searchParams : {}
+  const sessionId = typeof resolvedParams.session_id === 'string' ? resolvedParams.session_id : undefined
+  const status = typeof resolvedParams.status === 'string' ? resolvedParams.status : undefined
+
+  if (sessionId && status === 'success') {
+    await verifyAndSyncCheckoutSession(sessionId, currentUser.activeOrgId)
+  }
 
   const org = await prisma.organization.findUnique({
     where: { id: currentUser.activeOrgId },

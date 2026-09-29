@@ -32,7 +32,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const authToken = request.cookies.get('saas_auth_token')?.value
 
-  const protectedPaths = ['/dashboard', '/datasets', '/reports', '/workspace']
+  const protectedPaths = ['/dashboard', '/datasets', '/reports', '/workspace', '/organization']
   const isProtected = protectedPaths.some((p) => pathname.startsWith(p))
 
   const authPaths = ['/login', '/signup']
@@ -75,6 +75,7 @@ export const config = {
     '/datasets/:path*',
     '/reports/:path*',
     '/workspace/:path*',
+    '/organization/:path*',
     '/login',
     '/signup',
   ],

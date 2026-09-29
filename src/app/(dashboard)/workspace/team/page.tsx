@@ -10,7 +10,7 @@ export default async function TeamPage() {
   const activeMembership = currentUser.memberships.find(
     (m) => m.orgId === currentUser.activeOrgId
   )
-  const limits = getPlanLimits(activeMembership?.plan as any || 'FREE')
+  const limits = getPlanLimits(activeMembership?.plan  || 'FREE')
 
   const members = await prisma.membership.findMany({
     where: { organizationId: currentUser.activeOrgId },
