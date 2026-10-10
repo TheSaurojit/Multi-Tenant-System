@@ -177,16 +177,15 @@ RESEND_FROM_EMAIL="SaaS Analytics <onboarding@resend.dev>"
 ```
 
 ### 3. Start PostgreSQL Database
-Choose either local Docker or an external hosted database:
+Choose  local Docker  database:
 
-* **Option A: Local Docker (Recommended)**  
+* **Local Docker**  
   If Docker Desktop is running, start the local PostgreSQL 16 container:
   ```bash
   npm run db:up
   ```
 
-* **Option B: Cloud Database (Neon, Supabase, Railway, AWS RDS)**  
-  Create a free PostgreSQL instance on [Neon](https://neon.tech/) or [Supabase](https://supabase.com/), and paste your connection string into `DATABASE_URL` in `.env`.
+
 
 ### 4. Run Database Migrations
 Apply version-controlled Prisma database migrations:
