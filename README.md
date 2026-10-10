@@ -26,6 +26,7 @@ It enables companies (Organizations) and their teams to upload business CSV data
 - [Platform Usage Guide](#-platform-usage-guide)
 - [Project Directory Structure](#-project-directory-structure)
 - [NPM Scripts](#-npm-scripts)
+- [Troubleshooting & FAQs](#-troubleshooting--frequently-asked-questions-faq)
 
 ---
 
@@ -130,48 +131,72 @@ git clone <repository-url>
 cd "Multi Tenant System"
 npm install
 ```
+*(Prisma Client is automatically generated via `postinstall` upon `npm install`).*
 
 ### 2. Configure Environment Variables
 Copy the example environment file:
+
 ```bash
+# macOS / Linux / Git Bash / PowerShell
 cp .env.example .env
+
+# Windows Command Prompt (CMD)
+copy .env.example .env
 ```
 
-Open `.env` and review the values:
+Open `.env` and review your environment variables:
 ```env
-# Database Connection
+# -----------------------------------------------------------------------------
+# 1. Database Connection (REQUIRED)
+# Default points to local Docker PostgreSQL on port 5432
+# -----------------------------------------------------------------------------
 DATABASE_URL="postgresql://saas_user:saas_password@localhost:5432/saas_analytics?schema=public"
 
-# App & Authentication Secrets
+# -----------------------------------------------------------------------------
+# 2. App & Authentication Secrets (REQUIRED)
+# -----------------------------------------------------------------------------
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 JWT_SECRET="your-strong-random-secret-key-min-32-chars"
 
-# Stripe Configuration (Test Mode)
+# -----------------------------------------------------------------------------
+# 3. Stripe Configuration (OPTIONAL for local dev)
+# If omitted or left as placeholder, checkout runs in simulated test mode
+# -----------------------------------------------------------------------------
 STRIPE_SECRET_KEY="sk_test_..."
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
-
-# Stripe Recurring Price IDs
 STRIPE_PRO_PRICE_ID="price_..."
 STRIPE_ADVANCED_PRICE_ID="price_..."
+
+# -----------------------------------------------------------------------------
+# 4. Resend Transactional Email (OPTIONAL for local dev)
+# If omitted, verification & password reset links are logged directly to the terminal
+# -----------------------------------------------------------------------------
+RESEND_API_KEY="re_..."
+RESEND_FROM_EMAIL="SaaS Analytics <onboarding@resend.dev>"
 ```
 
 ### 3. Start PostgreSQL Database
-If you have Docker installed, spin up the local PostgreSQL container:
-```bash
-npm run db:up
-```
-*(Or point `DATABASE_URL` in `.env` to your existing PostgreSQL instance).*
+Choose either local Docker or an external hosted database:
+
+* **Option A: Local Docker (Recommended)**  
+  If Docker Desktop is running, start the local PostgreSQL 16 container:
+  ```bash
+  npm run db:up
+  ```
+
+* **Option B: Cloud Database (Neon, Supabase, Railway, AWS RDS)**  
+  Create a free PostgreSQL instance on [Neon](https://neon.tech/) or [Supabase](https://supabase.com/), and paste your connection string into `DATABASE_URL` in `.env`.
 
 ### 4. Run Database Migrations
-Apply the version-controlled Prisma migrations to your database:
+Apply version-controlled Prisma database migrations:
 ```bash
 npm run db:migrate
 ```
-*(In production or CI/CD pipelines, run `npm run db:deploy` to apply migrations without prompting).*
+*(In production or CI/CD pipelines, run `npm run db:deploy` to apply migrations non-interactively).*
 
 ### 5. Seed Demo Data
-Populate the database with sample organizations, multiple workspaces, team members with different roles, sample sales/marketing datasets, and audit logs:
+Populate the database with sample organizations, multiple child workspaces, team members with different roles, sample datasets, and security audit logs:
 ```bash
 npm run db:seed
 ```
@@ -222,15 +247,18 @@ Restart `npm run dev`. When you complete checkout with test card `4242 4242 4242
 
 ## 🔑 Default Demo Credentials
 
-When running `npm run db:seed`, the following accounts are created with password **`password123`**:
+When running `npm run db:seed`, the following demo accounts are created with password **`password123`**:
 
-| Email | Role | Organization | Current Plan | Permissions |
+| Email | Role | Organization | Current Plan | Permissions & What You Can Test |
 |---|---|---|---|---|
-| `owner@acme.com` | **OWNER** | Acme Analytics Inc. | Pro Plan | Full Admin, Billing, Invites, Audit Logs |
-| `admin@acme.com` | **ADMIN** | Acme Analytics Inc. | Pro Plan | Team Invites, Uploads, Audit Logs |
-| `member@acme.com` | **MEMBER** | Acme Analytics Inc. | Pro Plan | Upload Datasets, Create Reports |
-| `viewer@acme.com` | **VIEWER** | Acme Analytics Inc. | Pro Plan | Read-only Dashboards |
-| `owner@beta.com` | **OWNER** | Beta Launch Labs | Free Plan | Demonstrates Free Tier & Quota Limits |
+| `owner@acme.com` | **OWNER** | Acme Analytics Inc. & Beta Launch Labs | Pro Plan | Full Admin access: Stripe billing, team invites, workspace management, audit logs. **Owns both Acme (Pro) and Beta (Free)** — toggle between them via the Organization Switcher. |
+| `admin@acme.com` | **ADMIN** | Acme Analytics Inc. | Pro Plan | Management access: team invites, CSV uploads, workspace creation, audit logs. |
+| `member@acme.com` | **MEMBER** | Acme Analytics Inc. | Pro Plan | Standard team member: CSV uploads, saved custom reports, dashboard analysis. |
+| `viewer@acme.com` | **VIEWER** | Acme Analytics Inc. | Pro Plan | Read-only viewer: dashboard KPI analysis. Billing, team management, and audit logs are restricted via RBAC. |
+
+> [!TIP]
+> **Testing Free Plan Quotas:**  
+> Log in as `owner@acme.com` and click the **Organization Switcher** (top-left of the sidebar) to toggle between **Acme Analytics Inc.** (`PRO` Plan: 5 workspaces, 50 uploads/mo) and **Beta Launch Labs** (`FREE` Plan: 1 workspace limit, 5 uploads/mo).
 
 ---
 
@@ -248,8 +276,10 @@ When running `npm run db:seed`, the following accounts are created with password
 
 ### 3. Uploading CSV Data
 - Navigate to **Datasets** or click **"Upload CSV"** in the top navigation header.
-- Drag and drop any sales or marketing CSV file.
-- The platform processes the file, computes statistics, and automatically generates KPI visualizations.
+- **Ready-to-use Sample Datasets:** You can immediately test uploading using the sample files included in the repository:
+  - `public/samples/sales-data.csv` (Tests `SALES` schema: revenue, cost, orders, regions, products)
+  - `public/samples/marketing-data.csv` (Tests `MARKETING` schema: campaigns, channels, spend, clicks, conversions)
+- Drag and drop either file into the upload dropzone. The platform automatically detects the dataset schema, computes summary statistics, and generates KPI visualizations.
 
 ### 4. Custom Reports & Filters
 - Under **Saved Reports**, apply dynamic date range filters, category segmentations, and chart preferences.
@@ -275,20 +305,23 @@ When running `npm run db:seed`, the following accounts are created with password
 ## 📁 Project Directory Structure
 
 ```text
+├── public/
+│   └── samples/                  # Pre-configured sample CSV datasets (sales & marketing)
 ├── prisma/
 │   ├── schema.prisma             # Multi-tenant PostgreSQL database models & enums
+│   ├── migrations/               # Version-controlled SQL migration history
 │   └── seed.ts                   # Demo dataset & user seeding script
 ├── src/
 │   ├── app/
-│   │   ├── (auth)/               # Auth routes (login, signup, invite acceptance)
+│   │   ├── (auth)/               # Auth routes (login, signup, forgot-password, reset-password, verify-email, invite)
 │   │   ├── (dashboard)/          # Authenticated app shell
 │   │   │   ├── dashboard/        # Main KPI charts & metrics view
 │   │   │   ├── datasets/         # CSV upload & dataset management
 │   │   │   ├── reports/          # Saved custom reports & export
 │   │   │   ├── organization/     # Organization creation page
 │   │   │   └── workspace/        # Workspace creation, billing, team, audit logs
-│   │   ├── actions/              # Next.js Server Actions (auth, billing, team, dataset)
-│   │   └── api/                  # API Route Handlers (webhooks/stripe, auth/verify)
+│   │   ├── actions/              # Next.js Server Actions (auth, billing, team, dataset, report)
+│   │   └── api/                  # API Route Handlers (webhooks/stripe, auth/verify, workspace/export)
 │   ├── components/
 │   │   ├── auth/                 # Auth guards, role gates & access denied UI
 │   │   ├── billing/              # Plan comparison cards & Stripe portal trigger
@@ -304,9 +337,11 @@ When running `npm run db:seed`, the following accounts are created with password
 │   │   ├── auth.ts               # Session verification & password hashing
 │   │   ├── csv-parser.ts         # PapaParse engine & schema validation
 │   │   ├── db.ts                 # Prisma Client singleton
+│   │   ├── email.ts              # Resend transactional email delivery & dev console fallback
 │   │   ├── feature-limits.ts     # Plan quota gatekeeping logic
 │   │   ├── permissions.ts        # RBAC role-to-permission mapping
 │   │   ├── plans.ts              # Plan configurations & pricing metadata
+│   │   ├── rate-limit.ts         # Sliding-window rate limiting protection
 │   │   └── stripe.ts             # Stripe SDK, checkout & portal session generators
 │   └── proxy.ts                  # Edge security middleware & route protection
 ├── .env.example                  # Environment variable reference template
@@ -321,16 +356,61 @@ When running `npm run db:seed`, the following accounts are created with password
 | Command | Description |
 |---|---|
 | `npm run dev` | Starts the Next.js local development server on `http://localhost:3000` |
-| `npm run build` | Compiles and builds the production Next.js application |
+| `npm run build` | Compiles Prisma client and builds the production Next.js application |
 | `npm run start` | Runs the compiled production build |
 | `npm run lint` | Runs ESLint to check code quality |
-| `npm test` | Runs the automated 90-assertion test suite (CSV, RBAC, Rate Limiting, Plan Quotas) |
+| `npm test` | Runs the automated 124-test suite (CSV Parsing, RBAC, Rate Limiting, Plan Quotas, Transactional Emails) |
+| `npm run postinstall` | Generates Prisma Client (`prisma generate`) automatically upon `npm install` |
 | `npm run db:up` | Starts the local PostgreSQL container via Docker Compose |
 | `npm run db:down` | Stops the local PostgreSQL container |
 | `npm run db:migrate` | Runs Prisma development migrations (`prisma migrate dev`) |
-| `npm run db:deploy` | Applies production migrations (`prisma migrate deploy`) |
-| `npm run db:seed` | Resets and seeds the database with demo users, orgs, and datasets |
+| `npm run db:deploy` | Applies production migrations non-interactively (`prisma migrate deploy`) |
+| `npm run db:seed` | Resets and seeds the database with standard demo users, orgs, and datasets |
 | `npm run db:studio` | Launches Prisma Studio GUI on `http://localhost:5555` to view/edit database records |
+
+---
+
+## 🔧 Troubleshooting & Frequently Asked Questions (FAQ)
+
+### 1. Port 5432 is already in use (`bind: address already in use`)
+* **Cause**: You already have PostgreSQL installed and running on your host machine outside Docker.
+* **Solution**: Either stop your local PostgreSQL service:
+  ```bash
+  # Windows PowerShell (as Admin)
+  Stop-Service postgresql*
+
+  # macOS
+  brew services stop postgresql
+
+  # Linux (systemd)
+  sudo systemctl stop postgresql
+  ```
+  **Or** change the host port in `docker-compose.yml` to `"5433:5432"`, and update `DATABASE_URL` in `.env` to port `5433`:
+  ```env
+  DATABASE_URL="postgresql://saas_user:saas_password@localhost:5433/saas_analytics?schema=public"
+  ```
+
+### 2. Can I run the project without Docker?
+* **Yes, absolutely!** You do not need Docker installed. You can use any free hosted PostgreSQL provider like [Neon](https://neon.tech/) or [Supabase](https://supabase.com/).
+* Create a free database, paste the connection string into `DATABASE_URL` in your `.env`, and run:
+  ```bash
+  npm run db:deploy
+  npm run db:seed
+  npm run dev
+  ```
+
+### 3. How do I test without Stripe keys?
+* The application includes a **simulated development mode**. If you leave the Stripe environment variables empty or with their default placeholders, the application functions normally, and plan switching operates seamlessly in simulation mode without calling Stripe.
+
+### 4. How do I test emails (verification & password reset) without a Resend key?
+* If `RESEND_API_KEY` is not provided, the platform automatically enables **Development Fallback Mode**. When an email is sent (such as email verification, welcome email, or password reset), the email content and clickable action link are printed directly to your development terminal console.
+
+### 5. How do I reset or wipe the demo data?
+* If you created test organizations or uploaded test files and want to restore the clean demo state:
+  ```bash
+  npm run db:seed
+  ```
+  This cleanly resets all database tables and repopulates the standard demo users, organizations, workspaces, and datasets.
 
 ---
 
