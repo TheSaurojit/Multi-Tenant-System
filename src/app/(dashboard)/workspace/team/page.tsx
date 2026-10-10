@@ -3,6 +3,7 @@ import { requireAuthUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { TeamManagementView } from '@/components/team/team-management-view'
 import { getPlanLimits } from '@/lib/feature-limits'
+import { hasPermission } from '@/lib/permissions'
 
 export default async function TeamPage() {
   const currentUser = await requireAuthUser()
@@ -11,6 +12,10 @@ export default async function TeamPage() {
     (m) => m.orgId === currentUser.activeOrgId
   )
   const limits = getPlanLimits(activeMembership?.plan  || 'FREE')
+
+  // Invite tokens are capability secrets: only expose them to roles allowed
+  // to manage invitations. Everyone else never receives the token at all.
+  const canInvite = hasPermission(currentUser.role, 'members:invite')
 
   const members = await prisma.membership.findMany({
     where: { organizationId: currentUser.activeOrgId },
@@ -24,6 +29,15 @@ export default async function TeamPage() {
 
   const invitations = await prisma.invitation.findMany({
     where: { organizationId: currentUser.activeOrgId },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      status: true,
+      expiresAt: true,
+      createdAt: true,
+      ...(canInvite ? { token: true } : {}),
+    },
     orderBy: { createdAt: 'desc' },
   })
 

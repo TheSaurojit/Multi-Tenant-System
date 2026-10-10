@@ -34,7 +34,7 @@ export function CreateWorkspaceForm({
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!name.trim()) {
       setError('Workspace name is required.')
@@ -100,14 +100,14 @@ export function CreateWorkspaceForm({
           </div>
 
           {/* Quota Information Bar */}
-          <div className="mt-4 flex items-center justify-between text-xs px-3.5 py-2.5 rounded-xl bg-white dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-750">
-            <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300">
-              <Building2 className="w-4 h-4 text-zinc-400" />
+          <div className="mt-4 flex items-center justify-between text-xs px-3.5 py-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+            <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
+              <Building2 className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
               <span>Target Organization: <strong className="text-zinc-900 dark:text-zinc-100">{activeOrgName}</strong></span>
             </div>
-            <div className="flex items-center gap-1.5 font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center gap-1.5 font-mono text-[11px] text-zinc-600 dark:text-zinc-400">
               <span>Quota:</span>
-              <strong className="text-zinc-800 dark:text-zinc-200">
+              <strong className="text-zinc-900 dark:text-zinc-100">
                 {workspacesCount} / {maxWorkspaces >= 100 ? 'Unlimited' : maxWorkspaces}
               </strong>
             </div>
@@ -149,7 +149,7 @@ export function CreateWorkspaceForm({
           <div>
             <label
               htmlFor="name"
-              className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
+              className="block text-xs font-semibold text-zinc-900 dark:text-zinc-200 mb-1.5"
             >
               Workspace Name <span className="text-red-500">*</span>
             </label>
@@ -162,12 +162,12 @@ export function CreateWorkspaceForm({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Growth Marketing Labs"
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xs font-medium"
             />
             {slugPreview && (
-              <p className="mt-1.5 text-[11px] text-zinc-400 font-mono flex items-center gap-1 truncate">
+              <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400 font-mono flex items-center gap-1 truncate">
                 <span>Slug preview:</span>
-                <span className="text-indigo-600 dark:text-indigo-400">
+                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
                   {slugPreview}-XXXX
                 </span>
               </p>
@@ -178,9 +178,9 @@ export function CreateWorkspaceForm({
           <div>
             <label
               htmlFor="description"
-              className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
+              className="block text-xs font-semibold text-zinc-900 dark:text-zinc-200 mb-1.5"
             >
-              Description <span className="text-zinc-400 font-normal">(Optional)</span>
+              Description <span className="text-zinc-500 font-normal">(Optional)</span>
             </label>
             <textarea
               id="description"
@@ -190,7 +190,7 @@ export function CreateWorkspaceForm({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="e.g. Q4 campaign analytics, retention cohort tracking, and customer conversion datasets."
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed resize-none shadow-xs font-medium"
             />
           </div>
 

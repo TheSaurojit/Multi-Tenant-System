@@ -6,9 +6,16 @@ import { cache } from 'react'
 import { prisma } from './db'
 import { Role, Plan } from '../../generated/prisma'
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'multi-tenant-saas-jwt-secret-key-32-chars-long'
-)
+export function getJwtSecret(): Uint8Array {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    throw new Error(
+      'FATAL: JWT_SECRET environment variable is missing or shorter than 32 characters. Set a secure secret in .env.'
+    )
+  }
+  return new TextEncoder().encode(process.env.JWT_SECRET)
+}
+
+const JWT_SECRET = getJwtSecret()
 
 const COOKIE_NAME = 'saas_auth_token'
 const ORG_COOKIE_NAME = 'saas_active_org'
@@ -17,6 +24,8 @@ const WORKSPACE_COOKIE_NAME = 'saas_active_workspace'
 export interface SessionPayload {
   userId: string
   email: string
+  // Mirrors User.sessionVersion; a mismatch invalidates the token.
+  sessionVersion: number
 }
 
 export interface CurrentUser {
@@ -65,13 +74,53 @@ export async function createSessionToken(payload: SessionPayload): Promise<strin
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET)
+    if (!payload.userId || typeof payload.sessionVersion !== 'number') return null
     return {
       userId: payload.userId as string,
       email: payload.email as string,
+      sessionVersion: payload.sessionVersion,
     }
   } catch {
     return null
   }
+}
+
+/**
+ * Invalidates every previously issued session token for a user by bumping
+ * their sessionVersion. Callers must issue a fresh token afterwards if the
+ * current user should stay signed in.
+ */
+export async function bumpSessionVersion(userId: string): Promise<number> {
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { sessionVersion: { increment: 1 } },
+    select: { sessionVersion: true },
+  })
+  return updated.sessionVersion
+}
+
+/**
+ * Issues a fresh session token with the user's CURRENT sessionVersion
+ * (read from DB). Call after bumpSessionVersion so the acting user stays
+ * signed in while all pre-bump tokens are rejected.
+ */
+export async function refreshSessionCookies(user: {
+  id: string
+  email: string
+  activeOrgId?: string
+  activeWorkspaceId?: string
+}): Promise<void> {
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { sessionVersion: true },
+  })
+  if (!dbUser) return
+  const token = await createSessionToken({
+    userId: user.id,
+    email: user.email,
+    sessionVersion: dbUser.sessionVersion,
+  })
+  await setAuthCookies(token, user.activeOrgId, user.activeWorkspaceId)
 }
 
 export async function setAuthCookies(token: string, orgId?: string, workspaceId?: string) {
@@ -162,6 +211,9 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
     if (!user || user.memberships.length === 0) return null
 
+    // Revoked session (logout, removed from org, re-issued credentials)
+    if (user.sessionVersion !== session.sessionVersion) return null
+
     // Determine active org
     const activeOrgCookie = cookieStore.get(ORG_COOKIE_NAME)?.value
     const activeMembership =
@@ -170,15 +222,20 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
     // Determine active workspace inside the active org
     const activeWorkspaceCookie = cookieStore.get(WORKSPACE_COOKIE_NAME)?.value
-    const orgWorkspaces = activeMembership.organization.workspaces || []
+    const orgWorkspaces = [...(activeMembership.organization.workspaces || [])]
     const activeWorkspace =
       orgWorkspaces.find((w) => w.id === activeWorkspaceCookie) ||
-      orgWorkspaces[0] || {
-        id: 'default',
-        name: 'Default Workspace',
-        slug: 'default',
-        description: null,
-      }
+      orgWorkspaces[0] ||
+      null
+
+    // No workspace: signup/org-create/invite-accept guarantees at least one,
+    // so this indicates a data problem — never write from this read path.
+    if (!activeWorkspace) {
+      console.error(
+        `Organization ${activeMembership.organizationId} has no workspace; skipping session construction.`
+      )
+      return null
+    }
 
     return {
       id: user.id,
@@ -206,8 +263,10 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
         plan: m.organization.plan,
       })),
     }
-  } catch (error: any) {
-    if (error?.digest === 'DYNAMIC_SERVER_USAGE') throw error
+  } catch (error: unknown) {
+    if (typeof error === 'object' && error !== null && 'digest' in error && (error as { digest?: string }).digest === 'DYNAMIC_SERVER_USAGE') {
+      throw error
+    }
     console.error('Failed to get current user:', error)
     return null
   }

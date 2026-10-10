@@ -8,9 +8,12 @@ services:
       POSTGRES_PASSWORD: saas_password
       POSTGRES_DB: saas_analytics
     ports:
-      - "5432:5432"
+      # Bound to loopback only — change to "5432:5432" solely for local
+      # tooling that must reach it from the host, never expose publicly.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
 volumes:
   postgres_data:
+

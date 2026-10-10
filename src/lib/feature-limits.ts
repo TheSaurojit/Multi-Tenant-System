@@ -1,16 +1,31 @@
-import { Plan } from '../../generated/prisma'
+import { Plan, Prisma } from '../../generated/prisma'
 import { prisma } from './db'
 import { PLAN_CONFIGS, PlanLimits, getPlanLimits } from './plans'
 
 export { PLAN_CONFIGS, getPlanLimits }
 export type { PlanLimits }
 
+export function getRetentionCutoff(plan: Plan): Date {
+  const limits = getPlanLimits(plan)
+  return new Date(Date.now() - limits.retentionDays * 24 * 60 * 60 * 1000)
+}
+
+export type FeatureType =
+  | 'members'
+  | 'uploads'
+  | 'reports'
+  | 'workspaces'
+  | 'export'
+  | 'audit_logs'
+
 export async function checkFeatureLimit(
   organizationId: string,
-  feature: 'members' | 'uploads' | 'reports' | 'workspaces',
-  userId?: string
+  feature: FeatureType,
+  client?: Prisma.TransactionClient | typeof prisma
 ): Promise<{ allowed: boolean; current: number; max: number; plan: Plan; message?: string }> {
-  const org = await prisma.organization.findUnique({
+  const db = client ?? prisma
+
+  const org = await db.organization.findUnique({
     where: { id: organizationId },
     select: { plan: true },
   })
@@ -19,10 +34,14 @@ export async function checkFeatureLimit(
   const limits = getPlanLimits(plan)
 
   if (feature === 'members') {
-    const memberCount = await prisma.membership.count({
+    if (limits.maxMembers === Infinity) {
+      return { allowed: true, current: 0, max: Infinity, plan }
+    }
+
+    const memberCount = await db.membership.count({
       where: { organizationId },
     })
-    const pendingInvites = await prisma.invitation.count({
+    const pendingInvites = await db.invitation.count({
       where: { organizationId, status: 'PENDING' },
     })
     const total = memberCount + pendingInvites
@@ -40,11 +59,15 @@ export async function checkFeatureLimit(
   }
 
   if (feature === 'uploads') {
+    if (limits.monthlyUploads === Infinity) {
+      return { allowed: true, current: 0, max: Infinity, plan }
+    }
+
     const startOfMonth = new Date()
     startOfMonth.setDate(1)
     startOfMonth.setHours(0, 0, 0, 0)
 
-    const uploadCount = await prisma.dataset.count({
+    const uploadCount = await db.dataset.count({
       where: {
         organizationId,
         createdAt: { gte: startOfMonth },
@@ -60,12 +83,16 @@ export async function checkFeatureLimit(
       plan,
       message: allowed
         ? undefined
-        : `Your monthly upload limit of ${limits.monthlyUploads} CSV files for the ${limits.name} plan has been reached. Upgrade to Pro for 100 uploads/month.`,
+        : `Your monthly upload limit of ${limits.monthlyUploads} CSV files for the ${limits.name} plan has been reached. Upgrade to Pro for 50 uploads/month.`,
     }
   }
 
   if (feature === 'reports') {
-    const reportCount = await prisma.savedReport.count({
+    if (limits.maxSavedReports === Infinity) {
+      return { allowed: true, current: 0, max: Infinity, plan }
+    }
+
+    const reportCount = await db.savedReport.count({
       where: { organizationId },
     })
 
@@ -83,7 +110,11 @@ export async function checkFeatureLimit(
   }
 
   if (feature === 'workspaces') {
-    const workspaceCount = await prisma.workspace.count({
+    if (limits.maxWorkspaces === Infinity) {
+      return { allowed: true, current: 0, max: Infinity, plan }
+    }
+
+    const workspaceCount = await db.workspace.count({
       where: { organizationId },
     })
 
@@ -97,6 +128,34 @@ export async function checkFeatureLimit(
       message: allowed
         ? undefined
         : `Your ${limits.name} plan allows up to ${limits.maxWorkspaces} workspace(s) per organization. Upgrade to Pro for 5 workspaces or Advanced for unlimited.`,
+    }
+  }
+
+  if (feature === 'export') {
+    const allowed = limits.canExportCsv
+
+    return {
+      allowed,
+      current: 0,
+      max: limits.maxRowsPerCsv,
+      plan,
+      message: allowed
+        ? undefined
+        : `CSV export is not available on your ${limits.name} plan. Upgrade to Pro or Advanced to export data.`,
+    }
+  }
+
+  if (feature === 'audit_logs') {
+    const allowed = limits.hasAuditLogs
+
+    return {
+      allowed,
+      current: 0,
+      max: 1,
+      plan,
+      message: allowed
+        ? undefined
+        : `Audit activity logging is not included in the ${limits.name} plan. Upgrade to Pro or Advanced to view audit logs.`,
     }
   }
 

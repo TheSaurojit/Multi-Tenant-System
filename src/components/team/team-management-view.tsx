@@ -28,9 +28,28 @@ import {
 import Link from 'next/link'
 import { Role } from '../../../generated/prisma'
 
+interface TeamMemberRow {
+  id: string
+  userId: string
+  role: Role
+  createdAt: Date | string
+  user: { id: string; name: string; email: string; avatarUrl: string | null }
+}
+
+interface InvitationRow {
+  id: string
+  email: string
+  role: Role
+  status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED'
+  expiresAt: Date | string
+  createdAt: Date | string
+  // Only present when the viewer has the members:invite permission
+  token?: string
+}
+
 interface TeamManagementViewProps {
-  members: any[]
-  invitations: any[]
+  members: TeamMemberRow[]
+  invitations: InvitationRow[]
   currentUser?: CurrentUser
   maxMembers: number
 }
@@ -58,7 +77,7 @@ export function TeamManagementView({
   const totalTeamSlots = members.length + invitations.filter((i) => i.status === 'PENDING').length
   const isSlotLimitReached = totalTeamSlots >= maxMembers
 
-  const handleInviteSubmit = async (e: React.FormEvent) => {
+  const handleInviteSubmit = async (e: React.SubmitEvent) => {
     e.preventDefault()
     if (!inviteEmail.trim()) return
 
@@ -86,15 +105,21 @@ export function TeamManagementView({
   }
 
   const handleRoleChange = async (userId: string, newRole: Role) => {
-    await updateMemberRoleAction({
+    const res = await updateMemberRoleAction({
       targetUserId: userId,
       newRole,
     })
+    if (res && 'error' in res && res.error) {
+      alert(res.error)
+    }
   }
 
   const handleRemoveMember = async (userId: string) => {
     if (confirm('Are you sure you want to remove this member from the workspace?')) {
-      await removeMemberAction(userId)
+      const res = await removeMemberAction(userId)
+      if (res && 'error' in res && res.error) {
+        alert(res.error)
+      }
     }
   }
 
@@ -163,6 +188,7 @@ export function TeamManagementView({
               {members.map((m) => {
                 const isSelf = m.userId === currentUser.id
                 const isOwner = m.role === 'OWNER'
+                const isPeerAdmin = currentUser.role === 'ADMIN' && m.role === 'ADMIN'
 
                 return (
                   <tr
@@ -185,7 +211,7 @@ export function TeamManagementView({
                     </td>
 
                     <td className="py-3 px-4">
-                      {canUpdateRole && !isSelf && !isOwner ? (
+                      {canUpdateRole && !isSelf && !isOwner && !isPeerAdmin ? (
                         <select
                           value={m.role}
                           onChange={(e) => handleRoleChange(m.userId, e.target.value as Role)}
@@ -213,7 +239,7 @@ export function TeamManagementView({
                     </td>
 
                     <td className="py-3 px-4 text-right">
-                      {canRemove && !isSelf && !isOwner && (
+                      {canRemove && !isSelf && !isOwner && !isPeerAdmin && (
                         <button
                           onClick={() => handleRemoveMember(m.userId)}
                           className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
@@ -279,7 +305,7 @@ export function TeamManagementView({
                       {new Date(inv.expiresAt).toISOString().split('T')[0]}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      {inv.status === 'PENDING' && canInvite && (
+                      {inv.status === 'PENDING' && canInvite && inv.token && (
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() =>

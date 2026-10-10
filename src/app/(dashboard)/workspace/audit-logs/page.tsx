@@ -1,7 +1,8 @@
 import React from 'react'
 import { requireAuthUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { AuthGuard } from '@/components/auth/auth-guard'
+import { AuthGuard, AccessDenied } from '@/components/auth/auth-guard'
+import { hasPermission } from '@/lib/permissions'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
@@ -16,6 +17,7 @@ import {
   Terminal,
 } from 'lucide-react'
 import { AuditAction, Prisma } from '../../../.././../generated/prisma'
+import { getPlanLimits } from '@/lib/plans'
 
 export default async function AuditLogsPage({
   searchParams,
@@ -23,6 +25,49 @@ export default async function AuditLogsPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
   const currentUser = await requireAuthUser()
+
+  // Server-side RBAC barrier: prevents executing DB queries and serializing audit logs into RSC payload for unprivileged users
+  if (!hasPermission(currentUser.role, 'audit:view')) {
+    return (
+      <AccessDenied
+        title="Audit Logs Restricted"
+        requiredRole="Owner or Admin"
+        description="Audit activity logs are restricted to Organization Owners and Administrators."
+      />
+    )
+  }
+
+  const org = await prisma.organization.findUnique({
+    where: { id: currentUser.activeOrgId },
+    select: { plan: true },
+  })
+  const planLimits = getPlanLimits(org?.plan || 'FREE')
+
+  if (!planLimits.hasAuditLogs) {
+    return (
+      <AuthGuard requiredRoles={['OWNER', 'ADMIN']}>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Audit Activity Trail
+            </h1>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              Immutable log of team actions, dataset uploads, role modifications, and plan changes
+            </p>
+          </div>
+          <div className="py-12">
+            <EmptyState
+              icon={Shield}
+              title="Audit Logs are not available on your plan"
+              description={`The ${planLimits.name} plan does not include audit trail logs. Upgrade to a Pro or Advanced plan to track team security events, role modifications, and workspace activity.`}
+              actionLabel="Upgrade Plan"
+              href="/workspace/billing"
+            />
+          </div>
+        </div>
+      </AuthGuard>
+    )
+  }
 
   const resolvedParams = await searchParams
 
@@ -34,11 +79,14 @@ export default async function AuditLogsPage({
       ? (resolvedParams.action as AuditAction)
       : undefined;
 
+  const retentionCutoff = new Date(Date.now() - planLimits.retentionDays * 24 * 60 * 60 * 1000)
+
   const whereClause: Prisma.AuditLogWhereInput = {
     organizationId: currentUser.activeOrgId,
+    createdAt: { gte: retentionCutoff },
   }
 
-  if (actionFilter ) {
+  if (actionFilter) {
     whereClause.action = actionFilter
   }
 
@@ -52,6 +100,7 @@ export default async function AuditLogsPage({
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
+
 
   const getActionIcon = (action: string) => {
     switch (action) {

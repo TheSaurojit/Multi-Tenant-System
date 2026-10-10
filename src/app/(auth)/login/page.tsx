@@ -10,29 +10,34 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const handleQuickFill = (demoEmail: string) => {
     setEmail(demoEmail)
     setPassword('password123')
     setError(null)
+    setUnverifiedEmail(null)
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setUnverifiedEmail(null)
 
     const formData = new FormData()
     formData.append('email', email)
     formData.append('password', password)
 
-      const res = await loginAction(formData)
-      if (res?.error) {
-        setError(res.error)
-        setLoading(false)
+    const res = await loginAction(formData)
+    if (res?.error) {
+      setError(res.error)
+      if ('unverified' in res && res.unverified && 'email' in res && res.email) {
+        setUnverifiedEmail(res.email as string)
       }
-  
+      setLoading(false)
+    }
   }
 
   return (
@@ -53,7 +58,17 @@ export default function LoginPage() {
         <div className="bg-zinc-900/90 backdrop-blur-xl border border-zinc-800 py-8 px-6 shadow-2xl rounded-2xl sm:px-10">
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-950/60 border border-red-800/80 text-red-300 text-xs">
-              {error}
+              <p>{error}</p>
+              {unverifiedEmail && (
+                <div className="mt-2 pt-2 border-t border-red-800/50">
+                  <Link
+                    href={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
+                    className="font-semibold text-indigo-400 hover:text-indigo-300 underline inline-flex items-center gap-1"
+                  >
+                    Go to email verification page →
+                  </Link>
+                </div>
+              )}
             </div>
           )}
 
@@ -77,9 +92,12 @@ export default function LoginPage() {
                 <label className="block text-xs font-medium text-zinc-300">
                   Password
                 </label>
-                <span className="text-[11px] text-zinc-400">
-                  Demo password: <code className="text-indigo-400 font-mono">password123</code>
-                </span>
+                <Link
+                  href="/forgot-password"
+                  className="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  Forgot password?
+                </Link>
               </div>
               <input
                 type="password"

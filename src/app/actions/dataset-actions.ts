@@ -6,6 +6,7 @@ import { assertPermission } from '@/lib/permissions'
 import { logAuditEvent } from '@/lib/audit'
 import { checkFeatureLimit, getPlanLimits } from '@/lib/feature-limits'
 import { parseAndValidateCsv } from '@/lib/csv-parser'
+import { EntityIdSchema } from '@/lib/validations'
 import { revalidatePath } from 'next/cache'
 
 export async function uploadCsvAction(formData: FormData) {
@@ -14,23 +15,31 @@ export async function uploadCsvAction(formData: FormData) {
 
   assertPermission(user.role, 'datasets:upload')
 
-  // Check upload count limit
-  const uploadLimit = await checkFeatureLimit(user.activeOrgId, 'uploads')
-  if (!uploadLimit.allowed) {
-    return { error: uploadLimit.message }
-  }
-
   const file = formData.get('file') as File
   if (!file) {
     return { error: 'Please select a CSV file to upload.' }
   }
 
+  // Hard limits before the file is read into memory
+  const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 // 10MB
+  if (file.size === 0) {
+    return { error: 'The selected file is empty.' }
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return { error: 'File exceeds the 10MB upload limit. Please split the CSV and try again.' }
+  }
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    return { error: 'Only .csv files are supported.' }
+  }
+
   const customName = formData.get('name') as string
-  const datasetName = customName && customName.trim().length > 0 ? customName.trim() : file.name
+  const datasetName = (
+    customName && customName.trim().length > 0 ? customName.trim() : file.name
+  ).slice(0, 200)
 
   // Get active org plan limits
   const activeMembership = user.memberships.find((m) => m.orgId === user.activeOrgId)
-  const planLimits = getPlanLimits(activeMembership?.plan  || "FREE")
+  const planLimits = getPlanLimits(activeMembership?.plan || 'FREE')
 
   const text = await file.text()
   const validation = parseAndValidateCsv(text, planLimits.maxRowsPerCsv)
@@ -42,19 +51,38 @@ export async function uploadCsvAction(formData: FormData) {
     }
   }
 
-  // Create dataset record with PROCESSING status
-  const dataset = await prisma.dataset.create({
-    data: {
-      name: datasetName,
-      type: validation.detectedType,
-      fileSize: file.size,
-      rowCount: 0,
-      status: 'PROCESSING',
-      organizationId: user.activeOrgId,
-      workspaceId: user.activeWorkspaceId,
-      uploadedById: user.id,
-    },
+  // Atomically check quota limit and create dataset record with PROCESSING status
+  const datasetResult = await prisma.$transaction(async (tx) => {
+    const uploadLimit = await checkFeatureLimit(user.activeOrgId, 'uploads', tx)
+    if (!uploadLimit.allowed) {
+      return { error: uploadLimit.message }
+    }
+
+    const created = await tx.dataset.create({
+      data: {
+        name: datasetName,
+        type: validation.detectedType,
+        fileSize: file.size,
+        rowCount: 0,
+        status: 'PROCESSING',
+        organizationId: user.activeOrgId,
+        workspaceId: user.activeWorkspaceId,
+        uploadedById: user.id,
+      },
+    })
+
+    return { dataset: created }
   })
+
+  if ('error' in datasetResult && datasetResult.error) {
+    return { error: datasetResult.error }
+  }
+
+  if (!('dataset' in datasetResult) || !datasetResult.dataset) {
+    return { error: 'Failed to initialize dataset.' }
+  }
+
+  const dataset = datasetResult.dataset
 
   try {
     // Ingest data points in chunks of 500 for optimal performance
@@ -116,11 +144,21 @@ export async function uploadCsvAction(formData: FormData) {
     }
   } catch (err: any) {
     console.error('Ingestion failed:', err)
+    // Atomic ingestion guarantee: clean up partial orphan data points so dataset never leaves corrupted data
+    try {
+      await prisma.dataPoint.deleteMany({
+        where: { datasetId: dataset.id },
+      })
+    } catch (cleanupErr) {
+      console.warn('Failed to clean up orphan data points:', cleanupErr)
+    }
+
     await prisma.dataset.update({
       where: { id: dataset.id },
       data: {
         status: 'FAILED',
-        errorMessage: err?.message || 'Failed to process CSV records.',
+        errorMessage: (err?.message || 'Failed to process CSV records.').slice(0, 500),
+        rowCount: 0,
       },
     })
     return { error: 'Failed to ingest records into database.' }
@@ -128,21 +166,27 @@ export async function uploadCsvAction(formData: FormData) {
 }
 
 export async function deleteDatasetAction(datasetId: string) {
+  const parsedId = EntityIdSchema.safeParse(datasetId)
+  if (!parsedId.success) {
+    return { error: 'Invalid dataset ID.' }
+  }
+  const validDatasetId = parsedId.data
+
   const user = await getCurrentUser()
   if (!user) throw new Error('Unauthorized')
 
   assertPermission(user.role, 'datasets:delete')
 
   const dataset = await prisma.dataset.findUnique({
-    where: { id: datasetId },
+    where: { id: validDatasetId },
   })
 
-  if (!dataset || dataset.organizationId !== user.activeOrgId) {
-    throw new Error('Dataset not found')
+  if (!dataset || dataset.organizationId !== user.activeOrgId || dataset.workspaceId !== user.activeWorkspaceId) {
+    return { error: 'Dataset not found' }
   }
 
   await prisma.dataset.delete({
-    where: { id: datasetId },
+    where: { id: validDatasetId },
   })
 
   await logAuditEvent({
@@ -150,7 +194,7 @@ export async function deleteDatasetAction(datasetId: string) {
     userId: user.id,
     action: 'DATASET_DELETED',
     entityType: 'Dataset',
-    entityId: datasetId,
+    entityId: validDatasetId,
     details: { fileName: dataset.name, rowCount: dataset.rowCount },
   })
 

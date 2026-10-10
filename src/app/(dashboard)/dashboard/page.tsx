@@ -6,6 +6,9 @@ import { DashboardView } from '@/components/dashboard/dashboard-view'
 import { EmptyState } from '@/components/ui/empty-state'
 import { BarChart3 } from 'lucide-react'
 
+import { getPlanLimits } from '@/lib/plans'
+import { Prisma } from '../../../../generated/prisma'
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -17,19 +20,53 @@ export default async function DashboardPage({
   const datasetId = typeof resolvedParams.datasetId === 'string' ? resolvedParams.datasetId : undefined
   const range = typeof resolvedParams.range === 'string' ? resolvedParams.range : 'last90'
   const category = typeof resolvedParams.category === 'string' && resolvedParams.category !== 'all' ? [resolvedParams.category] : undefined
+  const customStartDateStr = typeof resolvedParams.startDate === 'string' ? resolvedParams.startDate : undefined
+  const customEndDateStr = typeof resolvedParams.endDate === 'string' ? resolvedParams.endDate : undefined
 
   // Compute date range
   let startDate: Date | undefined
+  let endDate: Date | undefined
   const now = new Date()
 
-  if (range === 'last7') {
+  if (range === 'custom') {
+    if (customStartDateStr) {
+      const d = new Date(customStartDateStr)
+      if (!isNaN(d.getTime())) startDate = d
+    }
+    if (customEndDateStr) {
+      const d = new Date(customEndDateStr)
+      if (!isNaN(d.getTime())) {
+        d.setHours(23, 59, 59, 999)
+        endDate = d
+      }
+    }
+  } else if (range === 'last7') {
     startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    endDate = now
   } else if (range === 'last30') {
     startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    endDate = now
   } else if (range === 'last90') {
     startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    endDate = now
   } else if (range === 'ytd') {
     startDate = new Date(now.getFullYear(), 0, 1)
+    endDate = now
+  } else if (range === 'all') {
+    endDate = now
+  }
+
+  // Support explicit query params if provided
+  if (!startDate && customStartDateStr) {
+    const d = new Date(customStartDateStr)
+    if (!isNaN(d.getTime())) startDate = d
+  }
+  if (!endDate && customEndDateStr) {
+    const d = new Date(customEndDateStr)
+    if (!isNaN(d.getTime())) {
+      d.setHours(23, 59, 59, 999)
+      endDate = d
+    }
   }
 
   const analytics = await getWorkspaceAnalytics({
@@ -37,6 +74,7 @@ export default async function DashboardPage({
     workspaceId: currentUser.activeWorkspaceId,
     datasetId,
     startDate,
+    endDate,
     categories: category,
   })
 
@@ -71,13 +109,30 @@ export default async function DashboardPage({
     orderBy: { updatedAt: 'desc' },
   })
 
+  // Fetch active org plan limits
+  const org = await prisma.organization.findUnique({
+    where: { id: currentUser.activeOrgId },
+    select: { plan: true },
+  })
+  const planLimits = getPlanLimits(org?.plan || 'FREE')
+
   // Fetch recent data points for current filter
-  const recentWhere: any = {
+  const retentionCutoff = new Date(Date.now() - planLimits.retentionDays * 24 * 60 * 60 * 1000)
+  let effectiveRecentStart = startDate
+  if (!effectiveRecentStart || effectiveRecentStart < retentionCutoff) {
+    effectiveRecentStart = retentionCutoff
+  }
+
+  const recentWhere: Prisma.DataPointWhereInput = {
     organizationId: currentUser.activeOrgId,
     workspaceId: currentUser.activeWorkspaceId,
+    dataset: { status: 'COMPLETED' },
+    date: {
+      gte: effectiveRecentStart,
+      ...(endDate ? { lte: endDate } : {}),
+    },
   }
   if (datasetId && datasetId !== 'all') recentWhere.datasetId = datasetId
-  if (startDate) recentWhere.date = { gte: startDate }
   if (category) recentWhere.category = { in: category }
 
   const recentPoints = await prisma.dataPoint.findMany({
@@ -85,6 +140,24 @@ export default async function DashboardPage({
     orderBy: { date: 'desc' },
     take: 50,
   })
+
+  // Serialize Prisma Decimal objects to plain numbers for RSC boundary
+  const serializedRecentPoints = recentPoints.map((p) => ({
+    id: p.id,
+    datasetId: p.datasetId,
+    organizationId: p.organizationId,
+    workspaceId: p.workspaceId,
+    date: p.date,
+    category: p.category,
+    subCategory: p.subCategory,
+    metric1: Number(p.metric1) || 0,
+    metric2: Number(p.metric2) || 0,
+    metric3: Number(p.metric3) || 0,
+    region: p.region,
+    channel: p.channel,
+    metadata: p.metadata,
+    createdAt: p.createdAt,
+  }))
 
   return (
     <div className="space-y-6">
@@ -106,9 +179,10 @@ export default async function DashboardPage({
         availableCategories={analytics.availableCategories}
         datasets={analytics.datasets}
         savedReports={savedReports}
-        recentPoints={recentPoints}
+        recentPoints={serializedRecentPoints}
         currentUser={currentUser}
         isMarketing={analytics.isMarketing}
+        canExportCsv={planLimits.canExportCsv}
       />
     </div>
   )

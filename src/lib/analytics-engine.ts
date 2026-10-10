@@ -1,5 +1,7 @@
 import { prisma } from './db'
 import Papa from 'papaparse'
+import { getPlanLimits } from './plans'
+import { Prisma } from '../../generated/prisma'
 
 export interface AnalyticsFilter {
   organizationId: string
@@ -13,13 +15,13 @@ export interface AnalyticsFilter {
 export interface KpiSummary {
   primaryLabel: string
   primaryTotal: number
-  primaryChange: number // percentage
+  primaryChange: number | null // percentage or null
   secondaryLabel: string
   secondaryTotal: number
-  secondaryChange: number
+  secondaryChange: number | null
   tertiaryLabel: string
   tertiaryTotal: number
-  tertiaryChange: number
+  tertiaryChange: number | null
   efficiencyLabel: string
   efficiencyValue: number // AOV or ROAS
   efficiencyUnit: string
@@ -39,9 +41,26 @@ export interface CategoryBreakdownPoint {
   percentage: number
 }
 
+export interface DatasetItem {
+  id: string
+  name: string
+  type: string
+  rowCount: number
+  status: string
+  createdAt: Date
+}
+
 export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
-  const whereClause: any = {
+  const org = await prisma.organization.findUnique({
+    where: { id: filter.organizationId },
+    select: { plan: true },
+  })
+  const planLimits = getPlanLimits(org?.plan || 'FREE')
+  const retentionCutoff = new Date(Date.now() - planLimits.retentionDays * 24 * 60 * 60 * 1000)
+
+  const whereClause: Prisma.DataPointWhereInput = {
     organizationId: filter.organizationId,
+    dataset: { status: 'COMPLETED' },
   }
 
   if (filter.workspaceId) {
@@ -52,120 +71,135 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     whereClause.datasetId = filter.datasetId
   }
 
-  if (filter.startDate || filter.endDate) {
-    whereClause.date = {}
-    if (filter.startDate) whereClause.date.gte = filter.startDate
-    if (filter.endDate) whereClause.date.lte = filter.endDate
+  // Retention limit enforcement: date cannot be older than retentionCutoff
+  let effectiveStartDate = filter.startDate
+  if (!effectiveStartDate || effectiveStartDate < retentionCutoff) {
+    effectiveStartDate = retentionCutoff
+  }
+
+  whereClause.date = {
+    gte: effectiveStartDate,
+  }
+
+  if (filter.endDate) {
+    whereClause.date.lte = filter.endDate
   }
 
   if (filter.categories && filter.categories.length > 0) {
     whereClause.category = { in: filter.categories }
   }
 
-  // Fetch all matching data points
-  const points = await prisma.dataPoint.findMany({
+  // 1. High-Performance DB Aggregation for Totals & Count
+  const totalsPromise = prisma.dataPoint.aggregate({
     where: whereClause,
-    orderBy: { date: 'asc' },
+    _sum: {
+      metric1: true,
+      metric2: true,
+      metric3: true,
+    },
+    _count: {
+      id: true,
+    },
   })
 
-  // Detect predominant dataset type
-  const dataset = filter.datasetId && filter.datasetId !== 'all'
-    ? await prisma.dataset.findUnique({ where: { id: filter.datasetId } })
-    : await prisma.dataset.findFirst({
+  // 2. High-Performance DB GroupBy for Time Series (scales to millions of rows)
+  const timeSeriesPromise = prisma.dataPoint.groupBy({
+    by: ['date'],
+    where: whereClause,
+    _sum: {
+      metric1: true,
+      metric2: true,
+      metric3: true,
+    },
+    orderBy: {
+      date: 'asc',
+    },
+  })
+
+  // 3. High-Performance DB GroupBy for Category Breakdown
+  const categoryBreakdownPromise = prisma.dataPoint.groupBy({
+    by: ['category'],
+    where: whereClause,
+    _sum: {
+      metric1: true,
+    },
+    orderBy: {
+      _sum: {
+        metric1: 'desc',
+      },
+    },
+  })
+
+  // 4. Scoped Dataset Lookup (prevents cross-tenant dataset leaks)
+  const datasetPromise = filter.datasetId && filter.datasetId !== 'all'
+    ? prisma.dataset.findFirst({
+        where: {
+          id: filter.datasetId,
+          organizationId: filter.organizationId,
+          ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
+          status: 'COMPLETED',
+        },
+      })
+    : prisma.dataset.findFirst({
         where: {
           organizationId: filter.organizationId,
+          status: 'COMPLETED',
           ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
         },
         orderBy: { createdAt: 'desc' },
       })
 
-  const isMarketing = dataset?.type === 'MARKETING'
-
-  // Labels based on dataset type
-  const primaryLabel = isMarketing ? 'Total Ad Spend' : 'Total Revenue'
-  const secondaryLabel = isMarketing ? 'Impressions / Clicks' : 'Total Costs'
-  const tertiaryLabel = isMarketing ? 'Total Conversions' : 'Units Sold'
-  const efficiencyLabel = isMarketing ? 'Cost per Acquisition' : 'Average Order Value'
-  const efficiencyUnit = isMarketing ? '$' : '$'
-
-  // Compute Totals
-  let primaryTotal = 0
-  let secondaryTotal = 0
-  let tertiaryTotal = 0
-
-  const timeSeriesMap: Record<string, { metric1: number; metric2: number; metric3: number }> = {}
-  const categoryMap: Record<string, number> = {}
-
-  for (const p of points) {
-    primaryTotal += p.metric1
-    secondaryTotal += p.metric2
-    tertiaryTotal += p.metric3
-
-    // Format date YYYY-MM-DD
-    const dateStr = p.date.toISOString().split('T')[0]
-    if (!timeSeriesMap[dateStr]) {
-      timeSeriesMap[dateStr] = { metric1: 0, metric2: 0, metric3: 0 }
+  // 5. Prior Period Aggregate Calculation
+  let priorPeriodPromise: Promise<{
+    _sum: {
+      metric1: Prisma.Decimal | null
+      metric2: Prisma.Decimal | null
+      metric3: Prisma.Decimal | null
     }
-    timeSeriesMap[dateStr].metric1 += p.metric1
-    timeSeriesMap[dateStr].metric2 += p.metric2
-    timeSeriesMap[dateStr].metric3 += p.metric3
+  } | null> = Promise.resolve(null)
 
-    // Categories
-    const cat = p.category || 'Other'
-    categoryMap[cat] = (categoryMap[cat] || 0) + p.metric1
-  }
+  if (effectiveStartDate) {
+    const periodEnd = filter.endDate ?? new Date()
+    const durationMs = periodEnd.getTime() - effectiveStartDate.getTime()
+    if (durationMs > 0) {
+      const priorPeriodStart = new Date(effectiveStartDate.getTime() - durationMs)
+      const priorPeriodEnd = effectiveStartDate
 
-  // Time series array sorted by date
-  const timeSeries: TimeSeriesPoint[] = Object.entries(timeSeriesMap).map(([date, vals]) => ({
-    date,
-    metric1: Math.round(vals.metric1 * 100) / 100,
-    metric2: Math.round(vals.metric2 * 100) / 100,
-    metric3: Math.round(vals.metric3 * 100) / 100,
-  }))
-
-  // Category breakdown sorted descending
-  const categoryBreakdown: CategoryBreakdownPoint[] = Object.entries(categoryMap)
-    .map(([cat, total]) => ({
-      category: cat,
-      total: Math.round(total * 100) / 100,
-      percentage: primaryTotal > 0 ? Math.round((total / primaryTotal) * 1000) / 10 : 0,
-    }))
-    .sort((a, b) => b.total - a.total)
-
-  // Efficiency Metric
-  let efficiencyValue = 0
-  if (isMarketing) {
-    efficiencyValue = tertiaryTotal > 0 ? primaryTotal / tertiaryTotal : 0
-  } else {
-    efficiencyValue = tertiaryTotal > 0 ? primaryTotal / tertiaryTotal : (points.length > 0 ? primaryTotal / points.length : 0)
-  }
-
-  // Comparative growth calculation (first half vs second half of time range)
-  let primaryChange = 12.4
-  let secondaryChange = 8.1
-  let tertiaryChange = 15.2
-
-  if (timeSeries.length >= 4) {
-    const mid = Math.floor(timeSeries.length / 2)
-    const firstHalf = timeSeries.slice(0, mid).reduce((sum, d) => sum + d.metric1, 0)
-    const secondHalf = timeSeries.slice(mid).reduce((sum, d) => sum + d.metric1, 0)
-    if (firstHalf > 0) {
-      primaryChange = Math.round(((secondHalf - firstHalf) / firstHalf) * 1000) / 10
+      priorPeriodPromise = prisma.dataPoint.aggregate({
+        where: {
+          organizationId: filter.organizationId,
+          dataset: { status: 'COMPLETED' },
+          ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
+          ...(filter.datasetId && filter.datasetId !== 'all' ? { datasetId: filter.datasetId } : {}),
+          ...(filter.categories && filter.categories.length > 0 ? { category: { in: filter.categories } } : {}),
+          date: {
+            gte: priorPeriodStart >= retentionCutoff ? priorPeriodStart : retentionCutoff,
+            lt: priorPeriodEnd,
+          },
+        },
+        _sum: {
+          metric1: true,
+          metric2: true,
+          metric3: true,
+        },
+      })
     }
   }
 
-  // Distinct categories available in workspace
-  const availableCategories = await prisma.dataPoint.findMany({
+  // 6. Distinct categories available in workspace within retention
+  const availableCategoriesPromise = prisma.dataPoint.findMany({
     where: {
       organizationId: filter.organizationId,
+      dataset: { status: 'COMPLETED' },
       ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
+      date: { gte: retentionCutoff },
     },
     distinct: ['category'],
     select: { category: true },
   })
 
-  // Datasets available in workspace
-  const datasets = await prisma.dataset.findMany({
+  // 7. Datasets available in workspace
+  const datasetsPromise = prisma.dataset.findMany({
     where: {
       organizationId: filter.organizationId,
       ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
@@ -173,6 +207,87 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     select: { id: true, name: true, type: true, rowCount: true, status: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
+
+  // Execute all independent queries concurrently via Promise.all
+  const [
+    totals,
+    timeSeriesGroups,
+    categoryGroups,
+    priorPeriodTotals,
+    availableCategories,
+    datasets,
+    dataset,
+  ] = await Promise.all([
+    totalsPromise,
+    timeSeriesPromise,
+    categoryBreakdownPromise,
+    priorPeriodPromise,
+    availableCategoriesPromise,
+    datasetsPromise,
+    datasetPromise,
+  ])
+
+  const isMarketing = dataset?.type === 'MARKETING'
+
+  // Metric Labels based on dataset type
+  const primaryLabel = isMarketing ? 'Total Ad Spend' : 'Total Revenue'
+  const secondaryLabel = isMarketing ? 'Impressions / Clicks' : 'Total Costs'
+  const tertiaryLabel = isMarketing ? 'Total Conversions' : 'Units Sold'
+  const efficiencyLabel = isMarketing ? 'Cost per Acquisition' : 'Average Order Value'
+  const efficiencyUnit = '₹'
+
+  // Extract totals safely from Decimal sums
+  const primaryTotal = Number(totals._sum.metric1 || 0)
+  const secondaryTotal = Number(totals._sum.metric2 || 0)
+  const tertiaryTotal = Number(totals._sum.metric3 || 0)
+  const totalRecords = totals._count.id
+
+  // Transform daily time-series
+  const timeSeries: TimeSeriesPoint[] = timeSeriesGroups.map((g) => ({
+    date: g.date.toISOString().split('T')[0],
+    metric1: Math.round(Number(g._sum.metric1 || 0) * 100) / 100,
+    metric2: Math.round(Number(g._sum.metric2 || 0) * 100) / 100,
+    metric3: Math.round(Number(g._sum.metric3 || 0) * 100) / 100,
+  }))
+
+  // Transform category breakdown
+  const categoryBreakdown: CategoryBreakdownPoint[] = categoryGroups.map((cg) => {
+    const catTotal = Number(cg._sum.metric1 || 0)
+    return {
+      category: cg.category || 'Other',
+      total: Math.round(catTotal * 100) / 100,
+      percentage: primaryTotal > 0 ? Math.round((catTotal / primaryTotal) * 1000) / 10 : 0,
+    }
+  })
+
+  // Efficiency calculation
+  let efficiencyValue = 0
+  if (isMarketing) {
+    efficiencyValue = tertiaryTotal > 0 ? primaryTotal / tertiaryTotal : 0
+  } else {
+    efficiencyValue = tertiaryTotal > 0 ? primaryTotal / tertiaryTotal : (totalRecords > 0 ? primaryTotal / totalRecords : 0)
+  }
+
+  // True Period-over-period comparison (compare with previous adjacent window of identical duration)
+  let primaryChange: number | null = null
+  let secondaryChange: number | null = null
+  let tertiaryChange: number | null = null
+
+  if (priorPeriodTotals?._sum) {
+    const priorPrimary = Number(priorPeriodTotals._sum.metric1 || 0)
+    const priorSecondary = Number(priorPeriodTotals._sum.metric2 || 0)
+    const priorTertiary = Number(priorPeriodTotals._sum.metric3 || 0)
+
+    if (priorPrimary > 0) {
+      primaryChange = Math.round(((primaryTotal - priorPrimary) / priorPrimary) * 1000) / 10
+    }
+    if (priorSecondary > 0) {
+      secondaryChange = Math.round(((secondaryTotal - priorSecondary) / priorSecondary) * 1000) / 10
+    }
+    if (priorTertiary > 0) {
+      tertiaryChange = Math.round(((tertiaryTotal - priorTertiary) / priorTertiary) * 1000) / 10
+    }
+  }
 
   return {
     kpis: {
@@ -188,7 +303,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
       efficiencyLabel,
       efficiencyValue: Math.round(efficiencyValue * 100) / 100,
       efficiencyUnit,
-      totalRecords: points.length,
+      totalRecords,
     },
     timeSeries,
     categoryBreakdown,
@@ -198,16 +313,38 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
   }
 }
 
-export function exportDataPointsToCsv(dataPoints: any[]): string {
+function sanitizeCsvValue(val: unknown): string | number {
+  if (val === null || val === undefined) return ''
+  if (typeof val === 'number') return val
+  const str = String(val)
+  if (/^[=+\-@\t\r]/.test(str)) {
+    return `'${str}`
+  }
+  return str
+}
+
+export function exportDataPointsToCsv(
+  dataPoints: Array<{
+    date?: Date | string
+    category: string
+    subCategory?: string | null
+    metric1: number | Prisma.Decimal
+    metric2: number | Prisma.Decimal
+    metric3: number | Prisma.Decimal
+    region?: string | null
+    channel?: string | null
+  }>,
+  isMarketing: boolean = false
+): string {
   const exportRows = dataPoints.map((p) => ({
     Date: p.date ? new Date(p.date).toISOString().split('T')[0] : '',
-    Category: p.category,
-    SubCategory: p.subCategory || '',
-    Metric1: p.metric1,
-    Metric2: p.metric2,
-    Metric3: p.metric3,
-    Region: p.region || '',
-    Channel: p.channel || '',
+    Category: sanitizeCsvValue(p.category),
+    SubCategory: sanitizeCsvValue(p.subCategory || ''),
+    [isMarketing ? 'Spend' : 'Revenue']: Number(p.metric1),
+    [isMarketing ? 'Impressions' : 'Cost']: Number(p.metric2),
+    [isMarketing ? 'Conversions' : 'UnitsSold']: Number(p.metric3),
+    Region: sanitizeCsvValue(p.region || ''),
+    Channel: sanitizeCsvValue(p.channel || ''),
   }))
 
   return Papa.unparse(exportRows)

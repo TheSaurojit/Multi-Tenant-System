@@ -51,7 +51,7 @@ async function runVerification() {
 
   // Proxy token and user existence tests
   const { createSessionToken, verifySessionToken } = await import('../src/lib/auth')
-  const validToken = await createSessionToken({ userId: owner!.id, email: owner!.email })
+  const validToken = await createSessionToken({ userId: owner!.id, email: owner!.email, sessionVersion: owner!.sessionVersion })
   const decodedValid = await verifySessionToken(validToken)
   assert(decodedValid?.userId === owner!.id, 'Valid session token properly decoded')
 
@@ -60,7 +60,7 @@ async function runVerification() {
   assert(!!verifiedUser, 'Proxy check: User exists in database for valid token')
 
   // Test non-existent user ID in token
-  const ghostToken = await createSessionToken({ userId: 'ghost_user_id_999', email: 'ghost@acme.com' })
+  const ghostToken = await createSessionToken({ userId: 'ghost_user_id_999', email: 'ghost@acme.com', sessionVersion: 0 })
   const decodedGhost = await verifySessionToken(ghostToken)
   const nonExistentUser = await prisma.user.findUnique({ where: { id: decodedGhost?.userId } })
   assert(nonExistentUser === null, 'Proxy check: Non-existent user correctly fails existence check')
@@ -120,22 +120,22 @@ async function runVerification() {
   const freeLimits = getPlanLimits('FREE')
   assert(freeLimits.priceMonthly === 0, 'Free plan priced at ₹0/month')
   assert(freeLimits.maxMembers === 3, 'Free plan limits members to 3')
-  assert(freeLimits.monthlyUploads === 10, 'Free plan limits monthly uploads to 10')
-  assert(freeLimits.maxRowsPerCsv === 50000, 'Free plan supports 50,000 rows/month')
+  assert(freeLimits.monthlyUploads === 5, 'Free plan supports 5 uploads/month')
+  assert(freeLimits.maxRowsPerCsv === 50000, 'Free plan supports 50,000 rows/file')
   assert(freeLimits.retentionDays === 30, 'Free plan has 30-day data retention')
 
   const proLimits = getPlanLimits('PRO')
   assert(proLimits.priceMonthly === 1499, 'Pro plan priced at ₹1,499/month')
   assert(proLimits.maxMembers === 15, 'Pro plan supports 15 members')
-  assert(proLimits.monthlyUploads === 100, 'Pro plan supports 100 uploads/month')
-  assert(proLimits.maxRowsPerCsv === 500000, 'Pro plan supports 500,000 rows/month')
+  assert(proLimits.monthlyUploads === 50, 'Pro plan supports 50 uploads/month')
+  assert(proLimits.maxRowsPerCsv === 50000, 'Pro plan supports 50,000 rows/file')
   assert(proLimits.retentionDays === 365, 'Pro plan has 1-year data retention')
 
   const advancedLimits = getPlanLimits('ADVANCED')
   assert(advancedLimits.priceMonthly === 4999, 'Advanced plan priced at ₹4,999/month')
   assert(advancedLimits.maxMembers >= 50, 'Advanced plan supports 50+ members')
-  assert(advancedLimits.monthlyUploads === 500, 'Advanced plan supports 500 uploads/month')
-  assert(advancedLimits.maxRowsPerCsv === 5000000, 'Advanced plan supports 5M rows/month')
+  assert(advancedLimits.monthlyUploads === 250, 'Advanced plan supports 250 uploads/month')
+  assert(advancedLimits.maxRowsPerCsv === 100000, 'Advanced plan supports 100,000 rows/file')
   assert(advancedLimits.retentionDays === 1095, 'Advanced plan has 3-year data retention')
 
   // 7. Audit Logging

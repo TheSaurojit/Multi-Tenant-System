@@ -32,6 +32,8 @@ export function DashboardCharts({
   primaryLabel,
   secondaryLabel,
 }: DashboardChartsProps) {
+  const isSecondaryCurrency = /cost|expense|cogs|fee|tax/i.test(secondaryLabel)
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Time-Series Trend Area Chart */}
@@ -64,7 +66,7 @@ export function DashboardCharts({
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={timeSeries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={timeSeries} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorMetric1" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#6366F1" stopOpacity={0.3} />
@@ -82,11 +84,29 @@ export function DashboardCharts({
                   tickLine={false}
                   axisLine={{ stroke: '#e5e7eb' }}
                 />
+                {/* Left YAxis: Primary metric (Currency / Revenue / Spend) */}
                 <YAxis
-                  tick={{ fontSize: 11, fill: '#9ca3af' }}
+                  yAxisId="left"
+                  tick={{ fontSize: 11, fill: '#6366F1' }}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(val) => (val >= 1000 ? `$${(val / 1000).toFixed(0)}k` : `$${val}`)}
+                  tickFormatter={(val: number) => (val >= 1000 ? `₹${(val / 1000).toFixed(0)}k` : `₹${val}`)}
+                />
+                {/* Right YAxis: Secondary metric (Cost currency or Impressions/Units count) */}
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fontSize: 11, fill: '#60A5FA' }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val: number) => {
+                    if (isSecondaryCurrency) {
+                      return val >= 1000 ? `₹${(val / 1000).toFixed(0)}k` : `₹${val}`
+                    }
+                    if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`
+                    if (val >= 1000) return `${(val / 1000).toFixed(0)}k`
+                    return `${val}`
+                  }}
                 />
                 <Tooltip
                   contentStyle={{
@@ -96,12 +116,21 @@ export function DashboardCharts({
                     color: '#f4f4f5',
                     fontSize: '12px',
                   }}
-                  formatter={(value: any, name: any) => [
-                    `$${Number(value).toLocaleString()}`,
-                    name === 'metric1' ? primaryLabel : secondaryLabel,
-                  ]}
+                  formatter={(value: unknown, name: unknown) => {
+                    const num = Number(value)
+                    if (name === 'metric1') {
+                      return [`₹${num.toLocaleString('en-IN')}`, primaryLabel]
+                    }
+                    return [
+                      isSecondaryCurrency
+                        ? `₹${num.toLocaleString('en-IN')}`
+                        : num.toLocaleString('en-IN'),
+                      secondaryLabel,
+                    ]
+                  }}
                 />
                 <Area
+                  yAxisId="left"
                   type="monotone"
                   dataKey="metric1"
                   stroke="#6366F1"
@@ -110,6 +139,7 @@ export function DashboardCharts({
                   fill="url(#colorMetric1)"
                 />
                 <Area
+                  yAxisId="right"
                   type="monotone"
                   dataKey="metric2"
                   stroke="#60A5FA"
@@ -152,7 +182,7 @@ export function DashboardCharts({
                   tick={{ fontSize: 10, fill: '#9ca3af' }}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(val) => (val >= 1000 ? `$${(val / 1000).toFixed(0)}k` : `$${val}`)}
+                  tickFormatter={(val: number) => (val >= 1000 ? `₹${(val / 1000).toFixed(0)}k` : `₹${val}`)}
                 />
                 <YAxis
                   type="category"
@@ -170,7 +200,7 @@ export function DashboardCharts({
                     color: '#f4f4f5',
                     fontSize: '12px',
                   }}
-                  formatter={(value: any) => [`$${Number(value).toLocaleString()}`, primaryLabel]}
+                  formatter={(value: unknown) => [`₹${Number(value).toLocaleString('en-IN')}`, primaryLabel]}
                 />
                 <Bar dataKey="total" radius={[0, 6, 6, 0]}>
                   {categoryBreakdown.slice(0, 6).map((_, index) => (

@@ -8,13 +8,17 @@ import { getRoleBadgeClass } from '@/lib/permissions'
 import { Users, AlertCircle, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { acceptInviteAction } from '@/app/actions/team-actions'
 
 export default async function InviteAcceptPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>
+  searchParams: Promise<{ error?: string }>
 }) {
   const { token } = await params
+  const { error } = await searchParams
   const currentUser = await getCurrentUser()
 
   const invitation = await prisma.invitation.findUnique({
@@ -46,55 +50,19 @@ export default async function InviteAcceptPage({
     )
   }
 
-  async function acceptInviteAction() {
+  const isEmailMatch = currentUser
+    ? currentUser.email.toLowerCase().trim() === invitation.email.toLowerCase().trim()
+    : false
+
+  async function handleAccept() {
     'use server'
-    const user = await getCurrentUser()
-    if (!user) redirect(`/login?from=/invite/${token}`)
-
-    const activeInvite = await prisma.invitation.findUnique({
-      where: { token },
-    })
-
-    if (!activeInvite || activeInvite.status !== 'PENDING') {
-      redirect('/login')
+    const res = await acceptInviteAction(token)
+    if (res && 'error' in res && res.error) {
+      redirect(`/invite/${token}?error=${encodeURIComponent(res.error)}`)
     }
-
-    // Create or update membership
-    await prisma.membership.upsert({
-      where: {
-        userId_organizationId: {
-          userId: user.id,
-          organizationId: activeInvite.organizationId,
-        },
-      },
-      update: {
-        role: activeInvite.role,
-      },
-      create: {
-        userId: user.id,
-        organizationId: activeInvite.organizationId,
-        role: activeInvite.role,
-      },
-    })
-
-    // Mark invite accepted
-    await prisma.invitation.update({
-      where: { id: activeInvite.id },
-      data: { status: 'ACCEPTED' },
-    })
-
-    // Log audit event
-    await logAuditEvent({
-      organizationId: activeInvite.organizationId,
-      userId: user.id,
-      action: 'INVITE_ACCEPTED',
-      entityType: 'User',
-      entityId: user.id,
-      details: { email: user.email, role: activeInvite.role },
-    })
-
-    // Switch active workspace
-    await setActiveOrgCookie(activeInvite.organizationId)
+    if (res && 'organizationId' in res && res.organizationId) {
+      await setActiveOrgCookie(res.organizationId)
+    }
     redirect('/dashboard')
   }
 
@@ -111,6 +79,12 @@ export default async function InviteAcceptPage({
             <strong className="text-zinc-200">{invitation.invitedBy.name}</strong> invited you to collaborate on
           </p>
 
+          {error && (
+            <div className="mt-4 p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-xs text-red-300 text-left">
+              {error}
+            </div>
+          )}
+
           <div className="my-6 p-4 rounded-xl bg-zinc-800/60 border border-zinc-700/60">
             <p className="text-lg font-bold text-white">{invitation.organization.name}</p>
             <div className="mt-2 flex items-center justify-center gap-2">
@@ -122,20 +96,41 @@ export default async function InviteAcceptPage({
           </div>
 
           {currentUser ? (
-            <div className="space-y-4">
-              <p className="text-xs text-zinc-400">
-                You are currently signed in as <strong className="text-zinc-200">{currentUser.email}</strong>.
-              </p>
-              <form action={acceptInviteAction}>
-                <Button type="submit" variant="primary" size="lg" className="w-full">
-                  Accept Invitation & Join Workspace
-                </Button>
-              </form>
-            </div>
+            isEmailMatch ? (
+              <div className="space-y-4">
+                <p className="text-xs text-zinc-400">
+                  You are currently signed in as <strong className="text-zinc-200">{currentUser.email}</strong>.
+                </p>
+                <form action={handleAccept}>
+                  <Button type="submit" variant="primary" size="lg" className="w-full">
+                    Accept Invitation & Join Workspace
+                  </Button>
+                </form>
+              </div>
+            ) : (
+              <div className="space-y-4 text-left p-4 rounded-xl bg-amber-950/30 border border-amber-800/60 text-xs">
+                <div className="flex items-start gap-2.5 text-amber-300">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Account Email Mismatch</p>
+                    <p className="text-zinc-400 mt-1">
+                      This invitation was issued to <strong className="text-zinc-200">{invitation.email}</strong>, but you are currently signed in as <strong className="text-zinc-200">{currentUser.email}</strong>.
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <Link href={`/login?from=/invite/${token}`}>
+                    <Button variant="outline" size="sm" className="w-full">
+                      Sign in as {invitation.email}
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )
           ) : (
             <div className="space-y-3">
               <p className="text-xs text-zinc-400">
-                Sign in to your account or register to accept this workspace invitation.
+                Sign in to your account with <strong className="text-zinc-200">{invitation.email}</strong> or create a new account to accept this invitation.
               </p>
               <Link href={`/login?from=/invite/${token}`}>
                 <Button variant="primary" size="lg" className="w-full">

@@ -69,8 +69,14 @@ model User {
   name            String
   passwordHash    String
   avatarUrl       String?
+  emailVerified   DateTime?
+  // Bumped to invalidate all previously issued session tokens (logout,
+  // password change, removal from an org, accepting a new invite).
+  sessionVersion  Int            @default(0)
   memberships     Membership[]
   invitationsSent Invitation[]   @relation("InvitedByUser")
+  passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
   datasets        Dataset[]
   reports         SavedReport[]
   auditLogs       AuditLog[]
@@ -163,6 +169,7 @@ model Dataset {
   updatedAt      DateTime      @updatedAt
 
   @@index([workspaceId])
+  @@index([organizationId, createdAt])
 }
 
 model DataPoint {
@@ -173,9 +180,9 @@ model DataPoint {
   date           DateTime
   category       String
   subCategory    String?
-  metric1        Float        @default(0) // Sales: Revenue, Marketing: Spend
-  metric2        Float        @default(0) // Sales: Cost, Marketing: Impressions/Clicks
-  metric3        Float        @default(0) // Sales: Units Sold, Marketing: Conversions
+  metric1        Decimal      @default(0) @db.Decimal(14, 2) // Sales: Revenue, Marketing: Spend
+  metric2        Decimal      @default(0) @db.Decimal(14, 2) // Sales: Cost, Marketing: Impressions/Clicks
+  metric3        Decimal      @default(0) @db.Decimal(14, 2) // Sales: Units Sold, Marketing: Conversions
   region         String?
   channel        String?
   metadata       Json?
@@ -188,6 +195,7 @@ model DataPoint {
   @@index([organizationId, category])
   @@index([workspaceId, date])
   @@index([workspaceId, category])
+  @@index([datasetId])
 }
 
 model SavedReport {
@@ -222,3 +230,29 @@ model AuditLog {
 
   @@index([organizationId, createdAt])
 }
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  email     String
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+

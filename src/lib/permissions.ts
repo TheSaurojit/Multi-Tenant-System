@@ -35,7 +35,6 @@ const ROLE_PERMISSIONS: Record<Role, AppPermission[]> = {
   ],
   ADMIN: [
     'org:update',
-    'billing:manage',
     'billing:view',
     'members:invite',
     'members:remove',
@@ -58,7 +57,6 @@ const ROLE_PERMISSIONS: Record<Role, AppPermission[]> = {
   ],
   VIEWER: [
     'data:view',
-    'data:export',
   ],
 }
 

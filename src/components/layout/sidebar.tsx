@@ -26,7 +26,7 @@ import {
   switchOrganizationAction,
   logoutAction,
 } from '@/app/actions/auth-actions'
-import { getRoleBadgeClass } from '@/lib/permissions'
+import { getRoleBadgeClass, hasPermission, AppPermission } from '@/lib/permissions'
 import { PLAN_CONFIGS } from '@/lib/plans'
 import { Badge } from '@/components/ui/badge'
 
@@ -59,17 +59,24 @@ export function Sidebar({
   const workspacesCount = currentUser.workspaces?.length || 1
   const isAtWorkspaceLimit = workspacesCount >= planLimits.maxWorkspaces
 
-  const navItems = [
-    { label: 'Analytics', href: '/dashboard', icon: BarChart3 },
-    { label: 'Datasets', href: '/datasets', icon: Database },
-    { label: 'Saved Reports', href: '/reports', icon: FileText },
+  interface NavItem {
+    label: string
+    href: string
+    icon: React.ComponentType<{ className?: string }>
+    permission?: AppPermission
+  }
+
+  const navItems: NavItem[] = [
+    { label: 'Analytics', href: '/dashboard', icon: BarChart3, permission: 'data:view' },
+    { label: 'Datasets', href: '/datasets', icon: Database, permission: 'data:view' },
+    { label: 'Saved Reports', href: '/reports', icon: FileText, permission: 'data:view' },
     { label: 'Team & Roles', href: '/workspace/team', icon: Users },
-    { label: 'Billing & Plans', href: '/workspace/billing', icon: CreditCard },
+    { label: 'Billing & Plans', href: '/workspace/billing', icon: CreditCard, permission: 'billing:view' },
     {
       label: 'Audit Logs',
       href: '/workspace/audit-logs',
       icon: History,
-      requiresAdmin: true,
+      permission: 'audit:view',
     },
   ]
 
@@ -283,36 +290,40 @@ export function Sidebar({
                     </button>
                   ))}
                 </div>
-                <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1 px-1">
-                  {isAtWorkspaceLimit ? (
-                    <Link
-                      href="/workspace/billing"
-                      onClick={() => {
-                        setWorkspaceDropdownOpen(false)
-                        onClose?.()
-                      }}
-                      className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-lg transition-colors font-medium"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Sparkles className="w-3 h-3" />
-                        Upgrade for More
-                      </span>
-                      <span className="text-[10px] font-bold">Limit Reached</span>
-                    </Link>
-                  ) : (
-                    <Link
-                      href="/workspace/create"
-                      onClick={() => {
-                        setWorkspaceDropdownOpen(false)
-                        onClose?.()
-                      }}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-lg transition-colors font-medium"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      New Workspace
-                    </Link>
-                  )}
-                </div>
+                {hasPermission(currentUser.role, 'org:update') && (
+                  <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1 px-1">
+                    {isAtWorkspaceLimit ? (
+                      hasPermission(currentUser.role, 'billing:view') ? (
+                        <Link
+                          href="/workspace/billing"
+                          onClick={() => {
+                            setWorkspaceDropdownOpen(false)
+                            onClose?.()
+                          }}
+                          className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-lg transition-colors font-medium"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles className="w-3 h-3" />
+                            Upgrade for More
+                          </span>
+                          <span className="text-[10px] font-bold">Limit Reached</span>
+                        </Link>
+                      ) : null
+                    ) : (
+                      <Link
+                        href="/workspace/create"
+                        onClick={() => {
+                          setWorkspaceDropdownOpen(false)
+                          onClose?.()
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-lg transition-colors font-medium"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        New Workspace
+                      </Link>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -321,7 +332,7 @@ export function Sidebar({
         {/* Navigation Items */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
-            if (item.requiresAdmin && !['OWNER', 'ADMIN'].includes(currentUser.role)) {
+            if (item.permission && !hasPermission(currentUser.role, item.permission)) {
               return null
             }
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)

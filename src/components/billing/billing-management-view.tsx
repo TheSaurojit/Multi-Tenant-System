@@ -30,6 +30,7 @@ interface BillingManagementViewProps {
   subscriptionStatus: string
   currentPeriodEnd?: string | null
   memberCount: number
+  pendingInvitesCount?: number
   monthlyUploadCount: number
   workspaceCount?: number
   currentUser?: CurrentUser
@@ -40,6 +41,7 @@ export function BillingManagementView({
   subscriptionStatus,
   currentPeriodEnd,
   memberCount,
+  pendingInvitesCount = 0,
   monthlyUploadCount,
   workspaceCount = 1,
   currentUser: propUser,
@@ -50,7 +52,7 @@ export function BillingManagementView({
   const [portalLoading, setPortalLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const isOwnerOrAdmin = auth.isOwner || auth.isAdmin || ['OWNER', 'ADMIN'].includes(currentUser.role)
+  const canManageBilling = auth.isOwner || currentUser.role === 'OWNER'
   const currentLimits = PLAN_CONFIGS[currentPlan]
 
   const handleUpgrade = async (plan: Plan) => {
@@ -58,8 +60,20 @@ export function BillingManagementView({
     setNotice(null)
     const res = await checkoutPlanAction(plan)
     setLoadingPlan(null)
-    if (res?.simulated) {
-      setNotice(`Test Mode: Workspace subscription successfully upgraded to ${plan} (₹${PLAN_CONFIGS[plan].priceMonthly}/mo)!`)
+    if (res && 'error' in res && res.error) {
+      setNotice(res.error)
+    }
+  }
+
+  const handleDowngrade = async () => {
+    setLoadingPlan('FREE')
+    setNotice(null)
+    const res = await checkoutPlanAction('FREE')
+    setLoadingPlan(null)
+    if (res && 'error' in res && res.error) {
+      setNotice(res.error)
+    } else if (res && 'downgraded' in res) {
+      setNotice('Workspace successfully downgraded to the Free plan.')
     }
   }
 
@@ -68,17 +82,10 @@ export function BillingManagementView({
     setNotice(null)
     const res = await openBillingPortalAction()
     setPortalLoading(false)
-    if (res?.message) {
-      setNotice(res.message)
+    if (res && 'error' in res && res.error) {
+      setNotice(res.error)
     }
   }
-
-  // const handleSimulateSwitch = async (plan: Plan) => {
-  //   setLoadingPlan(plan)
-  //   await simulatePlanChangeAction(plan)
-  //   setLoadingPlan(null)
-  //   setNotice(`Test Mode: Switched active plan to ${PLAN_CONFIGS[plan].name} (${PLAN_CONFIGS[plan].formattedPrice}/month).`)
-  // }
 
   return (
     <div className="space-y-6">
@@ -128,7 +135,7 @@ export function BillingManagementView({
             </p>
           </div>
 
-          {isOwnerOrAdmin && (
+          {canManageBilling && (
             <Button
               variant="outline"
               size="sm"
@@ -150,7 +157,7 @@ export function BillingManagementView({
                 <Layers className="w-3.5 h-3.5 text-zinc-400" /> Workspaces
               </span>
               <span className="font-mono text-zinc-500">
-                {workspaceCount} / {currentLimits.maxWorkspaces >= 100 ? 'Unlimited' : currentLimits.maxWorkspaces}
+                {workspaceCount} / {!isFinite(currentLimits.maxWorkspaces) ? 'Unlimited' : currentLimits.maxWorkspaces}
               </span>
             </div>
             <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
@@ -159,47 +166,56 @@ export function BillingManagementView({
                 style={{
                   width: `${Math.min(
                     100,
-                    currentLimits.maxWorkspaces >= 100
-                      ? Math.min(workspaceCount * 10, 100)
+                    !isFinite(currentLimits.maxWorkspaces)
+                      ? 0
                       : (workspaceCount / currentLimits.maxWorkspaces) * 100
                   )}%`,
                 }}
               />
             </div>
             <p className="text-[11px] text-zinc-400">
-              {currentLimits.maxWorkspaces >= 100
-                ? 'Unlimited workspaces in organization'
+              {!isFinite(currentLimits.maxWorkspaces)
+                ? `${workspaceCount} active workspace(s) (Unlimited)`
                 : `${Math.max(0, currentLimits.maxWorkspaces - workspaceCount)} workspace(s) available`}
             </p>
           </div>
 
-          {/* Meter 2: Team Seats */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-                Team Member Seats
-              </span>
-              <span className="font-mono text-zinc-500">
-                {memberCount} / {currentLimits.maxMembers >= 50 ? '50+' : currentLimits.maxMembers}
-              </span>
-            </div>
-            <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-indigo-600 rounded-full transition-all"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    (memberCount / currentLimits.maxMembers) * 100
-                  )}%`,
-                }}
-              />
-            </div>
-            <p className="text-[11px] text-zinc-400">
-              {currentLimits.maxMembers - memberCount > 0
-                ? `${currentLimits.maxMembers - memberCount} seat(s) available`
-                : 'Seat limit reached'}
-            </p>
-          </div>
+          {/* Meter 2: Team Seats (counts active members + pending invitations) */}
+          {(() => {
+            const totalSeats = memberCount + pendingInvitesCount
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                    Team Member Seats
+                  </span>
+                  <span className="font-mono text-zinc-500">
+                    {totalSeats} / {!isFinite(currentLimits.maxMembers) ? 'Unlimited' : currentLimits.maxMembers}
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-indigo-600 rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        !isFinite(currentLimits.maxMembers)
+                          ? 0
+                          : (totalSeats / currentLimits.maxMembers) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] text-zinc-400">
+                  {!isFinite(currentLimits.maxMembers)
+                    ? `${memberCount} active${pendingInvitesCount > 0 ? `, ${pendingInvitesCount} pending` : ''} (Unlimited)`
+                    : currentLimits.maxMembers - totalSeats > 0
+                    ? `${currentLimits.maxMembers - totalSeats} seat(s) available (${memberCount} active, ${pendingInvitesCount} pending)`
+                    : `Seat limit reached (${memberCount} active, ${pendingInvitesCount} pending)`}
+                </p>
+              </div>
+            )
+          })()}
 
           {/* Meter 3: Monthly Uploads */}
           <div className="space-y-2">
@@ -227,23 +243,28 @@ export function BillingManagementView({
             </p>
           </div>
 
-          {/* Meter 4: Monthly Rows Capacity */}
+          {/* Meter 4: Per-CSV Row Limit */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-                Monthly Row Volume
+                CSV Row Limit
               </span>
               <span className="font-mono text-zinc-500">
                 {currentLimits.maxRowsPerCsv >= 1000000
-                  ? `${currentLimits.maxRowsPerCsv / 1000000}M rows`
-                  : `${(currentLimits.maxRowsPerCsv / 1000).toFixed(0)}k rows`}
+                  ? `${currentLimits.maxRowsPerCsv / 1000000}M rows/file`
+                  : `${(currentLimits.maxRowsPerCsv / 1000).toFixed(0)}k rows/file`}
               </span>
             </div>
             <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full w-full" />
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, Math.max(5, Math.round((currentLimits.maxRowsPerCsv / 100000) * 100)))}%`,
+                }}
+              />
             </div>
             <p className="text-[11px] text-zinc-400">
-              {currentLimits.retentionLabel}
+              Enforced per CSV file • {currentLimits.retentionLabel}
             </p>
           </div>
         </div>
@@ -283,65 +304,27 @@ export function BillingManagementView({
 
               <div className="border-t border-zinc-100 dark:border-zinc-800 pt-4 mb-6">
                 <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-300">
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <strong>1 workspace</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <strong>3 team members</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    10 CSV uploads / month
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    50,000 rows / month
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    5 saved reports
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    Basic KPI dashboard
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    Revenue / sales charts
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    Date & category filters
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    CSV export
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    30-day data retention
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    Basic audit logs
-                  </li>
+                  {PLAN_CONFIGS.FREE.features.map((feature, idx) => (
+                    <li key={idx} className="flex items-center gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>
 
-            {/* {currentPlan !== 'FREE' && isOwnerOrAdmin && (
+            {currentPlan !== 'FREE' && canManageBilling && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleSimulateSwitch('FREE')}
+                onClick={handleDowngrade}
                 isLoading={loadingPlan === 'FREE'}
-                className="w-full"
+                className="w-full mt-4"
               >
                 Downgrade to Free (₹0/mo)
               </Button>
-            )} */}
+            )}
           </div>
 
           {/* 2. PRO PLAN - ₹1,499/mo */}
@@ -374,59 +357,18 @@ export function BillingManagementView({
               </p>
 
               <div className="border-t border-zinc-100 dark:border-zinc-800 pt-4 mb-6">
-                <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 mb-2">
-                  Everything in Basic, plus:
-                </p>
                 <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-300">
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    <strong>5 workspaces</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    <strong>15 team members</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    100 CSV uploads / month
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    <strong>500,000 rows / month</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    Unlimited saved reports
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    Advanced filters & custom dashboards
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    More chart types
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    Scheduled report exports
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    <strong>1-year data retention</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    Full audit logs & team invitations
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    Advanced usage analytics
-                  </li>
+                  {PLAN_CONFIGS.PRO.features.map((feature, idx) => (
+                    <li key={idx} className="flex items-center gap-2">
+                      <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>
 
-            {currentPlan !== 'PRO' && isOwnerOrAdmin && (
+            {currentPlan !== 'PRO' && canManageBilling && (
               <Button
                 variant="primary"
                 size="sm"
@@ -465,59 +407,18 @@ export function BillingManagementView({
               </p>
 
               <div className="border-t border-zinc-100 dark:border-zinc-800 pt-4 mb-6">
-                <p className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 mb-2">
-                  Everything in Pro, plus:
-                </p>
                 <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-300">
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <strong>Unlimited workspaces</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <strong>50+ team members</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <strong>500 CSV uploads / month</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <strong>5M rows / month</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    Unlimited reports & dashboard sharing
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    Data comparison & cohort/trend analysis
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    Custom metrics
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    API access & webhook integrations
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    Priority processing
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <strong>3-year data retention</strong>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    Advanced audit logs
-                  </li>
+                  {PLAN_CONFIGS.ADVANCED.features.map((feature, idx) => (
+                    <li key={idx} className="flex items-center gap-2">
+                      <Check className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             </div>
 
-            {currentPlan !== 'ADVANCED' && isOwnerOrAdmin && (
+            {currentPlan !== 'ADVANCED' && canManageBilling && (
               <Button
                 variant="primary"
                 size="sm"

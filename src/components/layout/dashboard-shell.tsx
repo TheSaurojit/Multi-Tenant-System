@@ -1,7 +1,8 @@
-﻿'use client'
+'use client'
 
 import React, { useState } from 'react'
 import { CurrentUser } from '@/lib/auth'
+import { hasPermission } from '@/lib/permissions'
 import { Sidebar } from '@/components/layout/sidebar'
 import Link from 'next/link'
 import { UploadCloud, Sparkles, Menu } from 'lucide-react'
@@ -75,7 +76,7 @@ export function DashboardShell({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {currentPlan === 'FREE' && (
+            {currentPlan === 'FREE' && hasPermission(currentUser.role, 'billing:view') && (
               <Link
                 href="/workspace/billing"
                 className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-500 to-indigo-600 text-white shadow-xs hover:opacity-90 transition-opacity"
@@ -85,14 +86,16 @@ export function DashboardShell({
               </Link>
             )}
 
-            <Link
-              href="/datasets?upload=true"
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs transition-colors"
-            >
-              <UploadCloud className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Upload CSV</span>
-              <span className="sm:hidden">Upload</span>
-            </Link>
+            {hasPermission(currentUser.role, 'datasets:upload') && (
+              <Link
+                href="/datasets?upload=true"
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs transition-colors"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Upload CSV</span>
+                <span className="sm:hidden">Upload</span>
+              </Link>
+            )}
           </div>
         </header>
 

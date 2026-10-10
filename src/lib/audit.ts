@@ -1,6 +1,6 @@
 import { prisma } from './db'
 import { AuditAction, Prisma } from '../../generated/prisma'
-import { headers } from 'next/headers'
+import { getClientIp } from './request-ip'
 
 interface LogAuditParams {
   organizationId: string
@@ -20,13 +20,7 @@ export async function logAuditEvent({
   details,
 }: LogAuditParams) {
   try {
-    let clientIp: string | null = null
-    try {
-      const headerList = await headers()
-      clientIp = headerList.get('x-forwarded-for') || headerList.get('x-real-ip')
-    } catch {
-      // In background tasks or non-request scopes
-    }
+    const clientIp = await getClientIp()
 
     await prisma.auditLog.create({
       data: {

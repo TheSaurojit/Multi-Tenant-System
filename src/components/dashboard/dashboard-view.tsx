@@ -24,17 +24,44 @@ import { CurrentUser } from '@/lib/auth'
 import { useAuth } from '@/contexts/auth-context'
 import { hasPermission } from '@/lib/permissions'
 import { saveReportAction } from '@/app/actions/report-actions'
+import {
+  KpiSummary,
+  TimeSeriesPoint,
+  CategoryBreakdownPoint,
+  DatasetItem,
+} from '@/lib/analytics-engine'
+
+export interface SavedReportItem {
+  id: string
+  name: string
+  description?: string | null
+  filters: unknown
+  updatedAt?: Date
+}
+
+export interface DataPointItem {
+  id: string
+  date: Date
+  category: string
+  subCategory?: string | null
+  metric1: number | string | { toNumber?: () => number; toString: () => string }
+  metric2: number | string | { toNumber?: () => number; toString: () => string }
+  metric3: number | string | { toNumber?: () => number; toString: () => string }
+  region?: string | null
+  channel?: string | null
+}
 
 interface DashboardViewProps {
-  kpis: any
-  timeSeries: any[]
-  categoryBreakdown: any[]
+  kpis: KpiSummary
+  timeSeries: TimeSeriesPoint[]
+  categoryBreakdown: CategoryBreakdownPoint[]
   availableCategories: string[]
-  datasets: any[]
-  savedReports: any[]
-  recentPoints: any[]
+  datasets: DatasetItem[]
+  savedReports: SavedReportItem[]
+  recentPoints: DataPointItem[]
   currentUser?: CurrentUser
   isMarketing: boolean
+  canExportCsv?: boolean
 }
 
 export function DashboardView({
@@ -47,6 +74,7 @@ export function DashboardView({
   recentPoints,
   currentUser: propUser,
   isMarketing,
+  canExportCsv = true,
 }: DashboardViewProps) {
   const auth = useAuth()
   const currentUser = propUser || auth.currentUser
@@ -56,16 +84,19 @@ export function DashboardView({
   const currentDatasetId = searchParams.get('datasetId') || 'all'
   const currentDateRange = searchParams.get('range') || 'last90'
   const currentCategory = searchParams.get('category') || 'all'
+  const currentStartDate = searchParams.get('startDate') || ''
+  const currentEndDate = searchParams.get('endDate') || ''
 
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
   const [reportName, setReportName] = useState('')
   const [reportDesc, setReportDesc] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
 
   const updateFilters = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString())
-    if (value === 'all') {
+    if (value === 'all' || !value) {
       params.delete(key)
     } else {
       params.set(key, value)
@@ -73,31 +104,45 @@ export function DashboardView({
     router.push(`/dashboard?${params.toString()}`)
   }
 
-  const handleExportCsv = () => {
-    if (!recentPoints || recentPoints.length === 0) return
+  const handleExportCsv = async () => {
+    if (!canExportCsv) {
+      alert('CSV export is not available on your current plan. Please upgrade to export data.')
+      return
+    }
 
-    const headers = ['Date', 'Category', 'SubCategory', isMarketing ? 'Spend' : 'Revenue', isMarketing ? 'Impressions' : 'Cost', isMarketing ? 'Conversions' : 'UnitsSold', 'RegionOrChannel']
-    const rows = recentPoints.map((p) => [
-      p.date ? new Date(p.date).toISOString().split('T')[0] : '',
-      `"${p.category}"`,
-      `"${p.subCategory || ''}"`,
-      p.metric1,
-      p.metric2,
-      p.metric3,
-      `"${p.region || p.channel || ''}"`,
-    ])
+    setIsExporting(true)
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n')
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement('a')
-    link.setAttribute('href', encodedUri)
-    link.setAttribute('download', `analytics-export-${new Date().toISOString().split('T')[0]}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    try {
+      const params = new URLSearchParams()
+      if (currentDatasetId && currentDatasetId !== 'all') params.set('datasetId', currentDatasetId)
+      if (currentDateRange) params.set('range', currentDateRange)
+      if (currentStartDate) params.set('startDate', currentStartDate)
+      if (currentEndDate) params.set('endDate', currentEndDate)
+      if (currentCategory && currentCategory !== 'all') params.set('category', currentCategory)
+
+      const response = await fetch(`/api/workspace/export?${params.toString()}`)
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => null)
+        throw new Error(errJson?.error || 'Failed to export CSV')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `workspace-export-${new Date().toISOString().split('T')[0]}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      alert(err.message || 'CSV export failed.')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
-  const handleSaveReport = async (e: React.FormEvent) => {
+  const handleSaveReport = async (e: React.SubmitEvent) => {
     e.preventDefault()
     if (!reportName.trim()) return
 
@@ -110,6 +155,8 @@ export function DashboardView({
       filters: {
         datasetId: currentDatasetId,
         range: currentDateRange,
+        startDate: currentStartDate || undefined,
+        endDate: currentEndDate || undefined,
         category: currentCategory,
       },
     })
@@ -161,8 +208,33 @@ export function DashboardView({
               <option value="last90">Last 90 Days</option>
               <option value="ytd">Year to Date</option>
               <option value="all">All Time</option>
+              <option value="custom">Custom Range</option>
             </select>
           </div>
+
+          {/* Custom Date Range Inputs */}
+          {currentDateRange === 'custom' && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-zinc-50 dark:bg-zinc-800/80 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs">
+                <span className="text-zinc-500 font-medium">From:</span>
+                <input
+                  type="date"
+                  value={currentStartDate}
+                  onChange={(e) => updateFilters('startDate', e.target.value)}
+                  className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-zinc-50 dark:bg-zinc-800/80 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs">
+                <span className="text-zinc-500 font-medium">To:</span>
+                <input
+                  type="date"
+                  value={currentEndDate}
+                  onChange={(e) => updateFilters('endDate', e.target.value)}
+                  className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Category Filter */}
           {availableCategories.length > 0 && (
@@ -190,11 +262,14 @@ export function DashboardView({
               <select
                 onChange={(e) => {
                   const r = savedReports.find((rep) => rep.id === e.target.value)
-                  if (r && r.filters) {
+                  if (r && r.filters && typeof r.filters === 'object') {
+                    const filters = r.filters as Record<string, string | undefined>
                     const params = new URLSearchParams()
-                    if (r.filters.datasetId) params.set('datasetId', r.filters.datasetId)
-                    if (r.filters.range) params.set('range', r.filters.range)
-                    if (r.filters.category) params.set('category', r.filters.category)
+                    if (filters.datasetId) params.set('datasetId', filters.datasetId)
+                    if (filters.range) params.set('range', filters.range)
+                    if (filters.startDate) params.set('startDate', filters.startDate)
+                    if (filters.endDate) params.set('endDate', filters.endDate)
+                    if (filters.category) params.set('category', filters.category)
                     router.push(`/dashboard?${params.toString()}`)
                   }
                 }}
@@ -232,10 +307,12 @@ export function DashboardView({
             variant="secondary"
             size="sm"
             onClick={handleExportCsv}
+            disabled={isExporting || !canExportCsv}
+            title={!canExportCsv ? 'Upgrade to Pro or Advanced to export CSV' : 'Export filtered data'}
             className="text-xs"
           >
             <Download className="w-3.5 h-3.5" />
-            Export CSV
+            {isExporting ? 'Exporting...' : 'Export CSV'}
           </Button>
         </div>
       </div>
@@ -248,23 +325,27 @@ export function DashboardView({
             <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
               {kpis.primaryLabel}
             </span>
-            <span
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold ${
-                kpis.primaryChange >= 0
-                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                  : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-              }`}
-            >
-              {kpis.primaryChange >= 0 ? (
-                <TrendingUp className="w-3 h-3" />
-              ) : (
-                <TrendingDown className="w-3 h-3" />
-              )}
-              {kpis.primaryChange >= 0 ? `+${kpis.primaryChange}%` : `${kpis.primaryChange}%`}
-            </span>
+            {kpis.primaryChange !== null && kpis.primaryChange !== undefined ? (
+              <span
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold ${
+                  kpis.primaryChange >= 0
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                    : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                }`}
+              >
+                {kpis.primaryChange >= 0 ? (
+                  <TrendingUp className="w-3 h-3" />
+                ) : (
+                  <TrendingDown className="w-3 h-3" />
+                )}
+                {kpis.primaryChange >= 0 ? `+${kpis.primaryChange}%` : `${kpis.primaryChange}%`}
+              </span>
+            ) : (
+              <span className="text-zinc-400 text-xs font-mono">—</span>
+            )}
           </div>
           <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
-            ${kpis.primaryTotal.toLocaleString()}
+            ₹{kpis.primaryTotal.toLocaleString('en-IN')}
           </div>
           <p className="mt-1 text-[11px] text-zinc-400">vs. previous period</p>
         </div>
@@ -275,21 +356,29 @@ export function DashboardView({
             <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
               {kpis.secondaryLabel}
             </span>
-            <span
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold ${
-                kpis.secondaryChange >= 0
-                  ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400'
-                  : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-              }`}
-            >
-              <TrendingUp className="w-3 h-3" />
-              +{kpis.secondaryChange}%
-            </span>
+            {kpis.secondaryChange !== null && kpis.secondaryChange !== undefined ? (
+              <span
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold ${
+                  kpis.secondaryChange >= 0
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400'
+                    : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                }`}
+              >
+                {kpis.secondaryChange >= 0 ? (
+                  <TrendingUp className="w-3 h-3" />
+                ) : (
+                  <TrendingDown className="w-3 h-3" />
+                )}
+                {kpis.secondaryChange >= 0 ? `+${kpis.secondaryChange}%` : `${kpis.secondaryChange}%`}
+              </span>
+            ) : (
+              <span className="text-zinc-400 text-xs font-mono">—</span>
+            )}
           </div>
           <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
             {isMarketing
-              ? kpis.secondaryTotal.toLocaleString()
-              : `$${kpis.secondaryTotal.toLocaleString()}`}
+              ? kpis.secondaryTotal.toLocaleString('en-IN')
+              : `₹${kpis.secondaryTotal.toLocaleString('en-IN')}`}
           </div>
           <p className="mt-1 text-[11px] text-zinc-400">operational costs / traffic</p>
         </div>
@@ -300,10 +389,24 @@ export function DashboardView({
             <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
               {kpis.tertiaryLabel}
             </span>
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
-              <TrendingUp className="w-3 h-3" />
-              +{kpis.tertiaryChange}%
-            </span>
+            {kpis.tertiaryChange !== null && kpis.tertiaryChange !== undefined ? (
+              <span
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-semibold ${
+                  kpis.tertiaryChange >= 0
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                    : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                }`}
+              >
+                {kpis.tertiaryChange >= 0 ? (
+                  <TrendingUp className="w-3 h-3" />
+                ) : (
+                  <TrendingDown className="w-3 h-3" />
+                )}
+                {kpis.tertiaryChange >= 0 ? `+${kpis.tertiaryChange}%` : `${kpis.tertiaryChange}%`}
+              </span>
+            ) : (
+              <span className="text-zinc-400 text-xs font-mono">—</span>
+            )}
           </div>
           <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
             {kpis.tertiaryTotal.toLocaleString()}
@@ -386,13 +489,13 @@ export function DashboardView({
                       {p.subCategory || '—'}
                     </td>
                     <td className="py-3 px-4 text-right font-semibold text-zinc-900 dark:text-zinc-100">
-                      ${p.metric1.toLocaleString()}
+                      ₹{Number(p.metric1).toLocaleString('en-IN')}
                     </td>
                     <td className="py-3 px-4 text-right text-zinc-600 dark:text-zinc-300">
-                      {isMarketing ? p.metric2.toLocaleString() : `$${p.metric2.toLocaleString()}`}
+                      {isMarketing ? Number(p.metric2).toLocaleString('en-IN') : `₹${Number(p.metric2).toLocaleString('en-IN')}`}
                     </td>
                     <td className="py-3 px-4 text-right text-zinc-600 dark:text-zinc-300">
-                      {p.metric3.toLocaleString()}
+                      {Number(p.metric3).toLocaleString('en-IN')}
                     </td>
                     <td className="py-3 px-4 text-zinc-500 dark:text-zinc-400">
                       {p.region || p.channel || '—'}

@@ -4,9 +4,12 @@ import { prisma } from './db'
 import { logAuditEvent } from './audit'
 import { Plan } from "../../generated/prisma";
 
-const isConfigured =
-  process.env.STRIPE_SECRET_KEY &&
-  !process.env.STRIPE_SECRET_KEY.includes('placeholder')
+export function isStripeConfigured(): boolean {
+  return Boolean(
+    process.env.STRIPE_SECRET_KEY &&
+    !process.env.STRIPE_SECRET_KEY.includes('placeholder')
+  )
+}
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock_secret', {
   apiVersion: '2026-08-26.dahlia'
@@ -37,24 +40,8 @@ export async function createCheckoutSession({
 
   if (!org) throw new Error('Organization not found')
 
-  // If using placeholder key in test mode, simulate immediate success
-  if (!isConfigured) {
-    // Simulate plan upgrade directly in test mode
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: {
-        plan,
-        subscriptionStatus: 'ACTIVE',
-        stripeCustomerId: org.stripeCustomerId || `cus_simulated_${organizationId.slice(0, 8)}`,
-        stripeSubscriptionId: `sub_simulated_${Date.now()}`,
-        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 days
-      },
-    })
-
-    return {
-      url: `${returnUrl}?session_id=simulated_${Date.now()}&status=success`,
-      simulated: true,
-    }
+  if (!isStripeConfigured()) {
+    throw new Error('Stripe billing is not configured on this instance. Please set a valid STRIPE_SECRET_KEY in your environment.')
   }
 
   // Real Stripe Test-Mode Session
@@ -138,12 +125,12 @@ export async function createBillingPortalSession({
 
   if (!org) throw new Error('Organization not found')
 
-  if (!isConfigured || !org.stripeCustomerId || org.stripeCustomerId.startsWith('cus_simulated')) {
-    // Simulated portal redirect
-    return {
-      url: `${returnUrl}?portal=simulated`,
-      simulated: true,
-    }
+  if (!isStripeConfigured()) {
+    throw new Error('Stripe billing portal is not configured on this instance.')
+  }
+
+  if (!org.stripeCustomerId || org.stripeCustomerId.startsWith('cus_simulated')) {
+    throw new Error('No active Stripe customer found for this organization.')
   }
 
   try {

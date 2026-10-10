@@ -122,11 +122,17 @@ export function AuthGuard({
           <p className="text-xs text-amber-700 dark:text-amber-300 max-w-sm mb-4">
             This feature requires a {requiredPlan} subscription. You are currently on the {currentPlan} plan.
           </p>
-          <Link href="/workspace/billing">
-            <Button variant="primary" size="sm" className="text-xs">
-              Upgrade Subscription
-            </Button>
-          </Link>
+          {can('billing:view') ? (
+            <Link href="/workspace/billing">
+              <Button variant="primary" size="sm" className="text-xs">
+                Upgrade Subscription
+              </Button>
+            </Link>
+          ) : (
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 italic">
+              Contact your organization administrator to upgrade this workspace plan.
+            </p>
+          )}
         </div>
       )
     }

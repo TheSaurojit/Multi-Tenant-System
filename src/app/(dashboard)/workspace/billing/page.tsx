@@ -2,10 +2,15 @@ import React from 'react'
 import { requireAuthUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { redirect } from 'next/navigation'
+import { hasPermission } from '@/lib/permissions'
 import { BillingManagementView } from '@/components/billing/billing-management-view'
 
 export default async function BillingPage() {
   const currentUser = await requireAuthUser()
+
+  if (!hasPermission(currentUser.role, 'billing:view')) {
+    redirect('/dashboard')
+  }
 
   const org = await prisma.organization.findUnique({
     where: { id: currentUser.activeOrgId },
@@ -15,6 +20,13 @@ export default async function BillingPage() {
 
   const memberCount = await prisma.membership.count({
     where: { organizationId: currentUser.activeOrgId },
+  })
+
+  const pendingInvitesCount = await prisma.invitation.count({
+    where: {
+      organizationId: currentUser.activeOrgId,
+      status: 'PENDING',
+    },
   })
 
   const startOfMonth = new Date()
@@ -48,6 +60,7 @@ export default async function BillingPage() {
         subscriptionStatus={org.subscriptionStatus}
         currentPeriodEnd={org.currentPeriodEnd?.toISOString() ?? null}
         memberCount={memberCount}
+        pendingInvitesCount={pendingInvitesCount}
         monthlyUploadCount={monthlyUploadCount}
         workspaceCount={workspaceCount}
         currentUser={currentUser}
@@ -55,3 +68,4 @@ export default async function BillingPage() {
     </div>
   )
 }
+

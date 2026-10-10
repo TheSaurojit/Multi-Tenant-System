@@ -23,7 +23,7 @@ export function CreateOrganizationForm({ currentOrgCount }: CreateOrganizationFo
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!name.trim()) {
       setError('Organization name is required.')
@@ -95,7 +95,7 @@ export function CreateOrganizationForm({ currentOrgCount }: CreateOrganizationFo
           <div>
             <label
               htmlFor="org-name"
-              className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
+              className="block text-xs font-semibold text-zinc-900 dark:text-zinc-200 mb-1.5"
             >
               Organization Name <span className="text-red-500">*</span>
             </label>
@@ -108,12 +108,12 @@ export function CreateOrganizationForm({ currentOrgCount }: CreateOrganizationFo
               value={name}
               onChange={(e) => setNewOrgName(e.target.value)}
               placeholder="e.g. Acme Corporation"
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xs font-medium"
             />
             {slugPreview && (
-              <p className="mt-1.5 text-[11px] text-zinc-400 font-mono flex items-center gap-1 truncate">
+              <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400 font-mono flex items-center gap-1 truncate">
                 <span>Slug preview:</span>
-                <span className="text-indigo-600 dark:text-indigo-400">
+                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
                   {slugPreview}-XXXX
                 </span>
               </p>

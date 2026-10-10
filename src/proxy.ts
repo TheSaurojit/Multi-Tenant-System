@@ -2,27 +2,18 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'multi-tenant-saas-jwt-secret-key-32-chars-long'
-)
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error(
+    'FATAL: JWT_SECRET environment variable is missing or shorter than 32 characters. Set a secure secret in .env.'
+  )
+}
 
-async function verifyTokenAndUser(request: NextRequest, token: string): Promise<boolean> {
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET)
+
+async function isValidSessionToken(token: string): Promise<boolean> {
   try {
-    // 1. Check if token is cryptographically valid and not expired
     const { payload } = await jwtVerify(token, JWT_SECRET)
-    if (!payload?.userId) return false
-
-    // 2. Check if user actually exists in the database via internal verify endpoint
-    const verifyUrl = new URL('/api/auth/verify', request.url)
-    const res = await fetch(verifyUrl, {
-      headers: {
-        authorization: `Bearer ${token}`,
-      },
-    })
-
-    if (!res.ok) return false
-    const data = await res.json()
-    return data?.ok === true
+    return Boolean(payload?.userId)
   } catch {
     return false
   }
@@ -35,7 +26,7 @@ export async function proxy(request: NextRequest) {
   const protectedPaths = ['/dashboard', '/datasets', '/reports', '/workspace', '/organization']
   const isProtected = protectedPaths.some((p) => pathname.startsWith(p))
 
-  const authPaths = ['/login', '/signup']
+  const authPaths = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email']
   const isAuthPage = authPaths.some((p) => pathname.startsWith(p))
 
   if (isProtected) {
@@ -46,25 +37,20 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl)
     }
 
-    // Verify token validity and user existence
-    const isValidUser = await verifyTokenAndUser(request, authToken)
-    if (!isValidUser) {
+    // Verify token cryptographically and check expiration (zero extra network hops)
+    const valid = await isValidSessionToken(authToken)
+    if (!valid) {
       const loginUrl = new URL('/login', request.url)
       loginUrl.searchParams.set('from', pathname)
       const response = NextResponse.redirect(loginUrl)
-      // Clear invalid/stale cookies
       response.cookies.delete('saas_auth_token')
       response.cookies.delete('saas_active_org')
+      response.cookies.delete('saas_active_workspace')
       return response
     }
   }
 
-  if (isAuthPage && authToken) {
-    const isValidUser = await verifyTokenAndUser(request, authToken)
-    if (isValidUser) {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
-    }
-  }
+ 
 
   return NextResponse.next()
 }
@@ -78,5 +64,8 @@ export const config = {
     '/organization/:path*',
     '/login',
     '/signup',
+    '/forgot-password',
+    '/reset-password',
+    '/verify-email',
   ],
 }

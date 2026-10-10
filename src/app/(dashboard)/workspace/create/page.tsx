@@ -1,6 +1,8 @@
 import React from 'react'
 import { requireAuthUser } from '@/lib/auth'
 import { PLAN_CONFIGS } from '@/lib/plans'
+import { hasPermission } from '@/lib/permissions'
+import { redirect } from 'next/navigation'
 import { CreateWorkspaceForm } from '@/components/workspace/create-workspace-form'
 
 export const metadata = {
@@ -9,6 +11,10 @@ export const metadata = {
 
 export default async function CreateWorkspacePage() {
   const currentUser = await requireAuthUser()
+
+  if (!hasPermission(currentUser.role, 'org:update')) {
+    redirect('/dashboard')
+  }
 
   const activeMembership = currentUser.memberships.find(
     (m) => m.orgId === currentUser.activeOrgId

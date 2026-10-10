@@ -2,6 +2,12 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '../src/lib/db'
 
 async function main() {
+  // Never seed demo accounts (known password "password123") into production
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ Refusing to seed: NODE_ENV is production.')
+    process.exit(1)
+  }
+
   console.log('🌱 Starting database seeding with Parent-Child Organization -> Workspace structure...')
 
   // Clean existing demo data in proper cascade order

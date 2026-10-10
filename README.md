@@ -39,7 +39,7 @@ It enables companies (Organizations) and their teams to upload business CSV data
 - Instant CSV parsing and validation using **PapaParse**.
 - Automated schema detection for sales, marketing, and custom business data.
 - Handles row validation, date standardization, and numerical normalization.
-- Enforces plan-based ingestion limits (e.g., 50k rows on Free vs. 5M rows on Advanced).
+- Enforces plan-based ingestion limits (e.g., 50k rows on Free vs. 100k rows on Advanced).
 
 ### 📈 3. Real-Time Analytics & Interactive Dashboards
 - **Instant KPI Computation**: Gross & Net Revenue, Average Order Value (AOV), Total Orders, and Conversion Rates.
@@ -56,9 +56,9 @@ It enables companies (Organizations) and their teams to upload business CSV data
 
 ### 💳 5. Tiered Stripe Subscription Billing & Quota Gating
 - Self-serve Stripe Checkout with tiered monthly subscriptions:
-  - **Free (₹0/mo)**: 1 workspace, 3 members, 10 uploads/mo, 50k rows/CSV.
-  - **Pro (₹1,499/mo)**: 5 workspaces, 15 members, 100 uploads/mo, 500k rows/CSV, 1-yr retention.
-  - **Advanced (₹4,999/mo)**: Unlimited workspaces, 50+ members, 500 uploads/mo, 5M rows/CSV, 3-yr retention.
+  - **Free (₹0/mo)**: 1 workspace, 3 members, 5 uploads/mo (up to 250k rows/mo), 50k rows/CSV.
+  - **Pro (₹1,499/mo)**: 5 workspaces, 15 members, 50 uploads/mo (up to 2.5M rows/mo), 50k rows/CSV, 1-yr retention.
+  - **Advanced (₹4,999/mo)**: Unlimited workspaces, 50+ members, 250 uploads/mo (up to 25M rows/mo), 100k rows/CSV, 3-yr retention.
 - Real-time usage quota enforcement (workspace limits, seat limits, upload allowances).
 - Full Stripe Customer Portal integration for customer card updates and invoice downloads.
 - Real-time webhook synchronization (`checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_succeeded`).
@@ -144,7 +144,7 @@ DATABASE_URL="postgresql://saas_user:saas_password@localhost:5432/saas_analytics
 
 # App & Authentication Secrets
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
-JWT_SECRET="multi-tenant-saas-jwt-secret-key-32-chars-long"
+JWT_SECRET="your-strong-random-secret-key-min-32-chars"
 
 # Stripe Configuration (Test Mode)
 STRIPE_SECRET_KEY="sk_test_..."
@@ -163,11 +163,12 @@ npm run db:up
 ```
 *(Or point `DATABASE_URL` in `.env` to your existing PostgreSQL instance).*
 
-### 4. Push Database Schema
-Apply the Prisma schema to your database:
+### 4. Run Database Migrations
+Apply the version-controlled Prisma migrations to your database:
 ```bash
-npx prisma db push
+npm run db:migrate
 ```
+*(In production or CI/CD pipelines, run `npm run db:deploy` to apply migrations without prompting).*
 
 ### 5. Seed Demo Data
 Populate the database with sample organizations, multiple workspaces, team members with different roles, sample sales/marketing datasets, and audit logs:
@@ -323,8 +324,11 @@ When running `npm run db:seed`, the following accounts are created with password
 | `npm run build` | Compiles and builds the production Next.js application |
 | `npm run start` | Runs the compiled production build |
 | `npm run lint` | Runs ESLint to check code quality |
+| `npm test` | Runs the automated 90-assertion test suite (CSV, RBAC, Rate Limiting, Plan Quotas) |
 | `npm run db:up` | Starts the local PostgreSQL container via Docker Compose |
 | `npm run db:down` | Stops the local PostgreSQL container |
+| `npm run db:migrate` | Runs Prisma development migrations (`prisma migrate dev`) |
+| `npm run db:deploy` | Applies production migrations (`prisma migrate deploy`) |
 | `npm run db:seed` | Resets and seeds the database with demo users, orgs, and datasets |
 | `npm run db:studio` | Launches Prisma Studio GUI on `http://localhost:5555` to view/edit database records |
 

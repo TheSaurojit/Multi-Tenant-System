@@ -1,5 +1,5 @@
 {
-  "name": "my-app",
+  "name": "multi-tenant-analytics-platform",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,9 +7,12 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx -r ./scripts/mock-server-only.js scripts/run-tests.ts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsx -r ./scripts/mock-server-only.js prisma/seed.ts",
     "db:studio": "prisma studio"
   },
   "dependencies": {
@@ -25,6 +28,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "^3.10.1",
+    "resend": "^6.32.1",
     "server-only": "^0.0.1",
     "stripe": "^22.6.2",
     "zod": "^4.6.5"
