@@ -70,7 +70,7 @@ It enables companies (Organizations) and their teams to upload business CSV data
 - Instant role reassignment and seat revocation.
 
 ### 🛡️ 7. Security, Auth & Enterprise Audit Trail
-- Stateless session security with encrypted JWTs in HTTP-Only cookies.
+- Stateless session security with signed JWTs in HTTP-Only cookies.
 - Edge proxy middleware (`src/proxy.ts`) verifying authentication and cryptographic tokens.
 - Immutable Audit Log (`/workspace/audit-logs`) tracking logins, data uploads, role modifications, and plan upgrades.
 
