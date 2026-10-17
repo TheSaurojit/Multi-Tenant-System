@@ -99,7 +99,17 @@ export async function downgradeToFreeAction() {
     try {
       await stripe.subscriptions.cancel(org.stripeSubscriptionId)
     } catch (err: any) {
-      console.warn('Failed to cancel Stripe subscription during downgrade:', err)
+      const isAlreadyCanceled =
+        err?.code === 'resource_missing' ||
+        err?.message?.toLowerCase().includes('already canceled') ||
+        err?.message?.toLowerCase().includes('already been canceled')
+
+      if (!isAlreadyCanceled) {
+        console.error('Failed to cancel Stripe subscription during downgrade:', err)
+        return {
+          error: `Failed to cancel active subscription with Stripe: ${err?.message || 'Payment provider error'}. Your plan was not modified.`,
+        }
+      }
     }
   }
 

@@ -29,6 +29,7 @@ async function main() {
       email: 'owner@acme.com',
       name: 'Sarah Connor (Owner)',
       passwordHash,
+      emailVerified: new Date(),
       avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
     },
   })
@@ -38,6 +39,7 @@ async function main() {
       email: 'admin@acme.com',
       name: 'Alex Rivers (Admin)',
       passwordHash,
+      emailVerified: new Date(),
       avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
     },
   })
@@ -47,6 +49,7 @@ async function main() {
       email: 'member@acme.com',
       name: 'Marcus Vance (Member)',
       passwordHash,
+      emailVerified: new Date(),
       avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
     },
   })
@@ -56,6 +59,7 @@ async function main() {
       email: 'viewer@acme.com',
       name: 'Elena Rostova (Viewer)',
       passwordHash,
+      emailVerified: new Date(),
       avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
     },
   })

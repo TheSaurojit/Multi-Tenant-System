@@ -196,7 +196,7 @@ export function Sidebar({
 
             {/* Org Dropdown Menu */}
             {orgDropdownOpen && (
-              <div className="absolute top-16 left-0 right-0 z-50 bg-black dark:bg-zinc-850 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 py-1.5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute top-16 left-0 right-0 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-800 py-1.5 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
                   Organizations
                 </div>
@@ -210,7 +210,7 @@ export function Sidebar({
                       <div className="flex items-center gap-2 truncate">
                         <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                         <span className="truncate">{m.orgName}</span>
-                        <span className="text-[9px] px-1 rounded bg-zinc-100 dark:bg-zinc-750 text-zinc-500">
+                        <span className="text-[9px] px-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
                           {m.plan}
                         </span>
                       </div>
@@ -266,7 +266,7 @@ export function Sidebar({
 
             {/* Workspace Dropdown Menu */}
             {workspaceDropdownOpen && (
-              <div className="absolute top-16 left-0 right-0 z-50 bg-black dark:bg-zinc-850 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 py-1.5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute top-16 left-0 right-0 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-800 py-1.5 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-3 py-1.5 flex items-center justify-between text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
                   <span>Workspaces ({workspacesCount})</span>
                   <span className="font-mono">

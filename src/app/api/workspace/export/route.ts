@@ -6,7 +6,7 @@ import { checkFeatureLimit } from '@/lib/feature-limits'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getPlanLimits } from '@/lib/plans'
 import { ExportCsvFilterSchema } from '@/lib/validations'
-import { exportDataPointsToCsv } from '@/lib/analytics-engine'
+import { exportDataPointsToCsv, resolveDateRange } from '@/lib/analytics-engine'
 import { logAuditEvent } from '@/lib/audit'
 
 export async function GET(req: NextRequest) {
@@ -61,51 +61,13 @@ export async function GET(req: NextRequest) {
     }
     const { datasetId, range, startDate: customStartDate, endDate: customEndDate, category } = parsed.data
 
-    const now = new Date()
     const retentionCutoff = new Date(Date.now() - planLimits.retentionDays * 24 * 60 * 60 * 1000)
 
-    let filterStart: Date | undefined
-    let filterEnd: Date | undefined
-
-    if (range === 'custom') {
-      if (customStartDate) {
-        const d = new Date(customStartDate)
-        if (!isNaN(d.getTime())) filterStart = d
-      }
-      if (customEndDate) {
-        const d = new Date(customEndDate)
-        if (!isNaN(d.getTime())) {
-          d.setHours(23, 59, 59, 999)
-          filterEnd = d
-        }
-      }
-    } else if (range === 'last7') {
-      filterStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      filterEnd = now
-    } else if (range === 'last30') {
-      filterStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-      filterEnd = now
-    } else if (range === 'last90') {
-      filterStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-      filterEnd = now
-    } else if (range === 'ytd') {
-      filterStart = new Date(now.getFullYear(), 0, 1)
-      filterEnd = now
-    } else if (range === 'all') {
-      filterEnd = now
-    }
-
-    if (!filterStart && customStartDate) {
-      const d = new Date(customStartDate)
-      if (!isNaN(d.getTime())) filterStart = d
-    }
-    if (!filterEnd && customEndDate) {
-      const d = new Date(customEndDate)
-      if (!isNaN(d.getTime())) {
-        d.setHours(23, 59, 59, 999)
-        filterEnd = d
-      }
-    }
+    const { startDate: filterStart, endDate: filterEnd } = resolveDateRange({
+      range,
+      startDate: customStartDate,
+      endDate: customEndDate,
+    })
 
     let effectiveStartDate = filterStart
     if (!effectiveStartDate || effectiveStartDate < retentionCutoff) {
@@ -169,7 +131,7 @@ export async function GET(req: NextRequest) {
       },
     })
 
-    const dateTag = now.toISOString().split('T')[0]
+    const dateTag = new Date().toISOString().split('T')[0]
     return new Response(csvContent, {
       status: 200,
       headers: {

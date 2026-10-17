@@ -50,6 +50,67 @@ export interface DatasetItem {
   createdAt: Date
 }
 
+export interface RetentionInfo {
+  retentionDays: number
+  hiddenCount: number
+  plan: string
+}
+
+export function resolveDateRange(params: {
+  range?: string
+  startDate?: string
+  endDate?: string
+}): { startDate?: Date; endDate?: Date } {
+  const { range, startDate: customStartDateStr, endDate: customEndDateStr } = params
+  const now = new Date()
+
+  let startDate: Date | undefined
+  let endDate: Date | undefined
+
+  if (range === 'custom') {
+    if (customStartDateStr) {
+      const d = new Date(customStartDateStr)
+      if (!isNaN(d.getTime())) startDate = d
+    }
+    if (customEndDateStr) {
+      const d = new Date(customEndDateStr)
+      if (!isNaN(d.getTime())) {
+        d.setHours(23, 59, 59, 999)
+        endDate = d
+      }
+    }
+  } else if (range === 'last7') {
+    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    endDate = now
+  } else if (range === 'last30') {
+    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    endDate = now
+  } else if (range === 'last90') {
+    startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    endDate = now
+  } else if (range === 'ytd') {
+    startDate = new Date(now.getFullYear(), 0, 1)
+    endDate = now
+  } else if (range === 'all') {
+    endDate = now
+  }
+
+  // Fallback support for explicit date query strings if not set by range preset
+  if (!startDate && customStartDateStr) {
+    const d = new Date(customStartDateStr)
+    if (!isNaN(d.getTime())) startDate = d
+  }
+  if (!endDate && customEndDateStr) {
+    const d = new Date(customEndDateStr)
+    if (!isNaN(d.getTime())) {
+      d.setHours(23, 59, 59, 999)
+      endDate = d
+    }
+  }
+
+  return { startDate, endDate }
+}
+
 export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
   const org = await prisma.organization.findUnique({
     where: { id: filter.organizationId },
@@ -208,6 +269,19 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     orderBy: { createdAt: 'desc' },
   })
 
+  // 8. Count data points hidden specifically by retention cutoff
+  const hiddenCountPromise = prisma.dataPoint.count({
+    where: {
+      organizationId: filter.organizationId,
+      ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
+      ...(filter.datasetId && filter.datasetId !== 'all' ? { datasetId: filter.datasetId } : {}),
+      dataset: { status: 'COMPLETED' },
+      date: {
+        lt: retentionCutoff,
+      },
+    },
+  })
+
   // Execute all independent queries concurrently via Promise.all
   const [
     totals,
@@ -217,6 +291,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     availableCategories,
     datasets,
     dataset,
+    hiddenCount,
   ] = await Promise.all([
     totalsPromise,
     timeSeriesPromise,
@@ -225,6 +300,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     availableCategoriesPromise,
     datasetsPromise,
     datasetPromise,
+    hiddenCountPromise,
   ])
 
   const isMarketing = dataset?.type === 'MARKETING'
@@ -310,6 +386,11 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     availableCategories: availableCategories.map((c) => c.category),
     datasets,
     isMarketing,
+    retentionInfo: {
+      retentionDays: planLimits.retentionDays,
+      hiddenCount,
+      plan: org?.plan || 'FREE',
+    },
   }
 }
 

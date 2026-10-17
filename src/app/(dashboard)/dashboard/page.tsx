@@ -1,6 +1,6 @@
 import React from 'react'
 import { requireAuthUser } from '@/lib/auth'
-import { getWorkspaceAnalytics } from '@/lib/analytics-engine'
+import { getWorkspaceAnalytics, resolveDateRange } from '@/lib/analytics-engine'
 import { prisma } from '@/lib/db'
 import { DashboardView } from '@/components/dashboard/dashboard-view'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -23,51 +23,12 @@ export default async function DashboardPage({
   const customStartDateStr = typeof resolvedParams.startDate === 'string' ? resolvedParams.startDate : undefined
   const customEndDateStr = typeof resolvedParams.endDate === 'string' ? resolvedParams.endDate : undefined
 
-  // Compute date range
-  let startDate: Date | undefined
-  let endDate: Date | undefined
-  const now = new Date()
-
-  if (range === 'custom') {
-    if (customStartDateStr) {
-      const d = new Date(customStartDateStr)
-      if (!isNaN(d.getTime())) startDate = d
-    }
-    if (customEndDateStr) {
-      const d = new Date(customEndDateStr)
-      if (!isNaN(d.getTime())) {
-        d.setHours(23, 59, 59, 999)
-        endDate = d
-      }
-    }
-  } else if (range === 'last7') {
-    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-    endDate = now
-  } else if (range === 'last30') {
-    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-    endDate = now
-  } else if (range === 'last90') {
-    startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-    endDate = now
-  } else if (range === 'ytd') {
-    startDate = new Date(now.getFullYear(), 0, 1)
-    endDate = now
-  } else if (range === 'all') {
-    endDate = now
-  }
-
-  // Support explicit query params if provided
-  if (!startDate && customStartDateStr) {
-    const d = new Date(customStartDateStr)
-    if (!isNaN(d.getTime())) startDate = d
-  }
-  if (!endDate && customEndDateStr) {
-    const d = new Date(customEndDateStr)
-    if (!isNaN(d.getTime())) {
-      d.setHours(23, 59, 59, 999)
-      endDate = d
-    }
-  }
+  // Compute date range via shared resolver
+  const { startDate, endDate } = resolveDateRange({
+    range,
+    startDate: customStartDateStr,
+    endDate: customEndDateStr,
+  })
 
   const analytics = await getWorkspaceAnalytics({
     organizationId: currentUser.activeOrgId,
@@ -183,6 +144,7 @@ export default async function DashboardPage({
         currentUser={currentUser}
         isMarketing={analytics.isMarketing}
         canExportCsv={planLimits.canExportCsv}
+        retentionInfo={analytics.retentionInfo}
       />
     </div>
   )

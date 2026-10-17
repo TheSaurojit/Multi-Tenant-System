@@ -255,4 +255,10 @@ model EmailVerificationToken {
   @@index([email])
 }
 
+model ProcessedStripeEvent {
+  id        String   @id
+  createdAt DateTime @default(now())
+}
+
+
 

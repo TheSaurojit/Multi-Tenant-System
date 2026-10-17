@@ -24,11 +24,13 @@ import { CurrentUser } from '@/lib/auth'
 import { useAuth } from '@/contexts/auth-context'
 import { hasPermission } from '@/lib/permissions'
 import { saveReportAction } from '@/app/actions/report-actions'
+import Link from 'next/link'
 import {
   KpiSummary,
   TimeSeriesPoint,
   CategoryBreakdownPoint,
   DatasetItem,
+  RetentionInfo,
 } from '@/lib/analytics-engine'
 
 export interface SavedReportItem {
@@ -62,6 +64,7 @@ interface DashboardViewProps {
   currentUser?: CurrentUser
   isMarketing: boolean
   canExportCsv?: boolean
+  retentionInfo?: RetentionInfo
 }
 
 export function DashboardView({
@@ -75,6 +78,7 @@ export function DashboardView({
   currentUser: propUser,
   isMarketing,
   canExportCsv = true,
+  retentionInfo,
 }: DashboardViewProps) {
   const auth = useAuth()
   const currentUser = propUser || auth.currentUser
@@ -316,6 +320,24 @@ export function DashboardView({
           </Button>
         </div>
       </div>
+
+      {/* Retention Policy Banner */}
+      {retentionInfo && retentionInfo.hiddenCount > 0 && (
+        <div className="bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-900 dark:text-amber-200 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>
+              <strong>{retentionInfo.hiddenCount} data points</strong> are older than your {retentionInfo.retentionDays}-day retention policy and are hidden from current metrics.
+            </span>
+          </div>
+          <Link
+            href="/workspace/billing"
+            className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 underline shrink-0"
+          >
+            Upgrade for 365-day history <ArrowUpRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      )}
 
       {/* 4 KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -33,14 +33,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Event-ID Idempotency: verify event was not already processed
-  const existingAudit = await prisma.auditLog.findFirst({
-    where: {
-      entityType: 'StripeWebhook',
-      entityId: event.id,
-    },
+  const alreadyProcessed = await prisma.processedStripeEvent.findUnique({
+    where: { id: event.id },
   })
 
-  if (existingAudit) {
+  if (alreadyProcessed) {
     console.log(`[Stripe Webhook] Duplicate event already handled: ${event.id}`)
     return NextResponse.json({ received: true, deduplicated: true })
   }
@@ -82,17 +79,20 @@ export async function POST(req: NextRequest) {
               ? session.customer
               : (session.customer as any)?.id
 
-            await prisma.organization.update({
-              where: { id: organizationId },
-              data: {
-                plan,
-                subscriptionStatus: 'ACTIVE',
-                stripeCustomerId: customerId || org.stripeCustomerId,
-                stripeSubscriptionId: subId || org.stripeSubscriptionId,
-                stripePriceId: priceId || org.stripePriceId,
-                currentPeriodEnd: periodEnd,
-              },
-            })
+            await prisma.$transaction([
+              prisma.processedStripeEvent.create({ data: { id: event.id } }),
+              prisma.organization.update({
+                where: { id: organizationId },
+                data: {
+                  plan,
+                  subscriptionStatus: 'ACTIVE',
+                  stripeCustomerId: customerId || org.stripeCustomerId,
+                  stripeSubscriptionId: subId || org.stripeSubscriptionId,
+                  stripePriceId: priceId || org.stripePriceId,
+                  currentPeriodEnd: periodEnd,
+                },
+              }),
+            ])
 
             await logAuditEvent({
               organizationId,
@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
             })
 
             console.log(`[Stripe Webhook] checkout.session.completed: Organization ${organizationId} upgraded to ${plan}`)
+            return NextResponse.json({ received: true })
           }
         }
         break
@@ -121,7 +122,6 @@ export async function POST(req: NextRequest) {
         })
 
         if (org) {
-          // Accurate subscription status mapping
           let mappedStatus: 'ACTIVE' | 'TRIALING' | 'PAST_DUE' | 'CANCELED' | 'INACTIVE' = 'INACTIVE'
           switch (sub.status) {
             case 'active':
@@ -143,11 +143,10 @@ export async function POST(req: NextRequest) {
               mappedStatus = 'INACTIVE'
           }
 
-          // In 2026-08-26.dahlia, current_period_end is on sub.items.data[0].current_period_end
           const rawPeriodEnd = sub.items?.data?.[0]?.current_period_end ?? (sub as any).current_period_end ?? (sub as any).billing_cycle_anchor
           const currentPeriodEnd = rawPeriodEnd ? new Date(rawPeriodEnd * 1000) : undefined
 
-          // Sync plan if price changed in Stripe
+          // Sync plan strictly from Price ID (or fallback to FREE if canceled)
           const activePriceId = sub.items?.data?.[0]?.price?.id
           let newPlan: Plan = org.plan
           if (activePriceId) {
@@ -157,22 +156,22 @@ export async function POST(req: NextRequest) {
               newPlan = 'PRO'
             }
           }
-          if (sub.metadata?.plan && ['FREE', 'PRO', 'ADVANCED'].includes(sub.metadata.plan)) {
-            newPlan = sub.metadata.plan as Plan
-          }
           if (mappedStatus === 'CANCELED') {
             newPlan = 'FREE'
           }
 
-          await prisma.organization.update({
-            where: { id: org.id },
-            data: {
-              plan: newPlan,
-              subscriptionStatus: mappedStatus,
-              stripePriceId: activePriceId || org.stripePriceId,
-              ...(currentPeriodEnd ? { currentPeriodEnd } : {}),
-            },
-          })
+          await prisma.$transaction([
+            prisma.processedStripeEvent.create({ data: { id: event.id } }),
+            prisma.organization.update({
+              where: { id: org.id },
+              data: {
+                plan: newPlan,
+                subscriptionStatus: mappedStatus,
+                stripePriceId: activePriceId || org.stripePriceId,
+                ...(currentPeriodEnd ? { currentPeriodEnd } : {}),
+              },
+            }),
+          ])
 
           await logAuditEvent({
             organizationId: org.id,
@@ -190,6 +189,7 @@ export async function POST(req: NextRequest) {
           })
 
           console.log(`[Stripe Webhook] customer.subscription.updated: Org ${org.id} plan=${newPlan}, status=${mappedStatus}`)
+          return NextResponse.json({ received: true })
         }
         break
       }
@@ -201,14 +201,17 @@ export async function POST(req: NextRequest) {
         })
 
         if (org) {
-          await prisma.organization.update({
-            where: { id: org.id },
-            data: {
-              plan: 'FREE',
-              subscriptionStatus: 'CANCELED',
-              currentPeriodEnd: null,
-            },
-          })
+          await prisma.$transaction([
+            prisma.processedStripeEvent.create({ data: { id: event.id } }),
+            prisma.organization.update({
+              where: { id: org.id },
+              data: {
+                plan: 'FREE',
+                subscriptionStatus: 'CANCELED',
+                currentPeriodEnd: null,
+              },
+            }),
+          ])
 
           await logAuditEvent({
             organizationId: org.id,
@@ -225,6 +228,7 @@ export async function POST(req: NextRequest) {
           })
 
           console.log(`[Stripe Webhook] customer.subscription.deleted: Org ${org.id} downgraded to FREE`)
+          return NextResponse.json({ received: true })
         }
         break
       }
@@ -244,13 +248,16 @@ export async function POST(req: NextRequest) {
             const rawPeriodEnd = invoice.period_end ?? (invoice.lines?.data?.[0]?.period?.end)
             const currentPeriodEnd = rawPeriodEnd ? new Date(rawPeriodEnd * 1000) : undefined
 
-            await prisma.organization.update({
-              where: { id: org.id },
-              data: {
-                subscriptionStatus: 'ACTIVE',
-                ...(currentPeriodEnd ? { currentPeriodEnd } : {}),
-              },
-            })
+            await prisma.$transaction([
+              prisma.processedStripeEvent.create({ data: { id: event.id } }),
+              prisma.organization.update({
+                where: { id: org.id },
+                data: {
+                  subscriptionStatus: 'ACTIVE',
+                  ...(currentPeriodEnd ? { currentPeriodEnd } : {}),
+                },
+              }),
+            ])
 
             await logAuditEvent({
               organizationId: org.id,
@@ -266,14 +273,21 @@ export async function POST(req: NextRequest) {
             })
 
             console.log(`[Stripe Webhook] invoice.payment_succeeded: Renewed subscription for Org ${org.id}`)
+            return NextResponse.json({ received: true })
           }
         }
         break
       }
     }
 
+    // Record processed event for unhandled types or events where no org matched
+    await prisma.processedStripeEvent.create({ data: { id: event.id } }).catch(() => {})
     return NextResponse.json({ received: true })
   } catch (error: any) {
+    if (error?.code === 'P2002') {
+      console.log(`[Stripe Webhook] Duplicate event handled concurrently: ${event.id}`)
+      return NextResponse.json({ received: true, deduplicated: true })
+    }
     console.error('Webhook handler failed:', error)
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 })
   }

@@ -3,6 +3,13 @@ interface RateLimitRecord {
   resetTime: number
 }
 
+/**
+ * In-memory rate limit store.
+ * NOTE: In multi-instance or serverless container environments (e.g. AWS ECS with multiple tasks,
+ * Kubernetes replicas, or Vercel Serverless Functions), each process maintains its own in-memory Map.
+ * For distributed horizontal scaling across multiple instances, swap or back this store with
+ * a centralized Redis / Upstash Redis client (@upstash/ratelimit) using UPSTASH_REDIS_REST_URL.
+ */
 const rateLimitStore = new Map<string, RateLimitRecord>()
 
 // Clean up expired records every 10 minutes to prevent memory leak
