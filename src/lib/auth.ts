@@ -300,3 +300,23 @@ export async function requireActiveWorkspaceId(redirectTo: string = '/login'): P
   return user.activeWorkspaceId
 }
 
+/**
+ * Safely resolves post-auth redirection paths.
+ * Prevents open redirects, protocol-relative attacks, backslash escapes,
+ * and circular redirects to login/signup pages.
+ */
+export function resolveAuthRedirect(rawFrom: unknown, fallback: string = '/dashboard'): string {
+  if (
+    typeof rawFrom === 'string' &&
+    rawFrom.startsWith('/') &&
+    !rawFrom.startsWith('//') &&
+    !rawFrom.includes('\\') &&
+    !rawFrom.startsWith('/login') &&
+    !rawFrom.startsWith('/signup')
+  ) {
+    return rawFrom
+  }
+  return fallback
+}
+
+

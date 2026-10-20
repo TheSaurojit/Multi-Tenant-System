@@ -42,10 +42,12 @@ export async function proxy(request: NextRequest) {
   const isProtected = protectedPaths.some((p) => pathname.startsWith(p))
 
   if (isProtected) {
+    const fullPath = pathname + (request.nextUrl.search || '')
+
     // If no token exists, immediately redirect to login
     if (!authToken) {
       const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('from', pathname)
+      loginUrl.searchParams.set('from', fullPath)
       return NextResponse.redirect(loginUrl)
     }
 
@@ -53,7 +55,7 @@ export async function proxy(request: NextRequest) {
     const valid = await isValidSessionToken(authToken)
     if (!valid) {
       const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('from', pathname)
+      loginUrl.searchParams.set('from', fullPath)
       const response = NextResponse.redirect(loginUrl)
       response.cookies.delete('saas_auth_token')
       response.cookies.delete('saas_active_org')

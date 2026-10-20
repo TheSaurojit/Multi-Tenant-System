@@ -12,6 +12,7 @@ function VerifyEmailContent() {
   const searchParams = useSearchParams()
   const token = searchParams.get('token')
   const emailParam = searchParams.get('email') || ''
+  const from = searchParams.get('from') || ''
   const justSent = searchParams.get('sent') === 'true'
 
   const [resendEmail, setResendEmail] = useState(emailParam)
@@ -106,10 +107,13 @@ function VerifyEmailContent() {
             variant="primary"
             size="lg"
             className="w-full"
-            onClick={() => router.push('/dashboard')}
+            onClick={() => {
+              const target = from && from.startsWith('/') && !from.startsWith('//') ? from : '/dashboard'
+              router.push(target)
+            }}
           >
             <Sparkles className="w-4 h-4 mr-1.5" />
-            Continue to Dashboard
+            {from ? 'Continue to Invitation' : 'Continue to Dashboard'}
           </Button>
         </div>
       </div>

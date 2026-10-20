@@ -12,6 +12,7 @@ import {
   clearAuthCookies,
   getCurrentUser,
   bumpSessionVersion,
+  resolveAuthRedirect,
 } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { logAuditEvent } from '@/lib/audit'
@@ -127,16 +128,7 @@ export async function loginAction(formData: FormData) {
   await setAuthCookies(token, defaultOrgId, defaultWorkspaceId)
 
   const rawFrom = formData.get('from')
-  let redirectTo = '/dashboard'
-  if (
-    typeof rawFrom === 'string' &&
-    rawFrom.startsWith('/') &&
-    !rawFrom.startsWith('//') &&
-    !rawFrom.includes('\\')
-  ) {
-    redirectTo = rawFrom
-  }
-
+  const redirectTo = resolveAuthRedirect(rawFrom)
   redirect(redirectTo)
 }
 
@@ -256,7 +248,13 @@ export async function signupAction(formData: FormData) {
     expiresInHours: 24,
   })
 
-  redirect(`/verify-email?sent=true&email=${encodeURIComponent(user.email)}`)
+  const rawFrom = formData.get('from')
+  const safeFrom = resolveAuthRedirect(rawFrom, '')
+  const redirectTo = safeFrom
+    ? `/verify-email?sent=true&email=${encodeURIComponent(user.email)}&from=${encodeURIComponent(safeFrom)}`
+    : `/verify-email?sent=true&email=${encodeURIComponent(user.email)}`
+
+  redirect(redirectTo)
 }
 
 export async function switchOrganizationAction(organizationId: string) {

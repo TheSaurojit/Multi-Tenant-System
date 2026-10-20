@@ -135,7 +135,7 @@ export default async function InviteAcceptPage({
                   Sign In to Accept
                 </Button>
               </Link>
-              <Link href="/signup">
+              <Link href={`/signup?from=/invite/${token}`}>
                 <Button variant="outline" size="sm" className="w-full">
                   Create New Account
                 </Button>

@@ -17,6 +17,7 @@ import { slugify, generateUniqueSlug } from '../src/lib/slug'
 import { hasPermission, assertPermission } from '../src/lib/permissions'
 import { getPlanLimits } from '../src/lib/plans'
 import { checkFeatureLimit, getRetentionCutoff } from '../src/lib/feature-limits'
+import { resolveAuthRedirect } from '../src/lib/auth'
 import { Prisma } from '../generated/prisma'
 
 let passedTests = 0
@@ -434,6 +435,88 @@ async function runTestSuite() {
       inviteUrl: 'http://localhost:3000/invite/mocktoken',
     })
     assert(inviteResult.success, 'sendWorkspaceInviteEmail succeeds in dev fallback mode')
+  }
+
+  // -------------------------------------------------------------------------
+  // 10. POST-AUTH REDIRECTION & OPEN-REDIRECT MITIGATION
+  // -------------------------------------------------------------------------
+  console.log('\n--- Suite 10: Post-Auth Redirection & Open-Redirect Mitigation ---')
+  {
+    // Valid relative destinations
+    assert(
+      resolveAuthRedirect('/invite/tok_sample123') === '/invite/tok_sample123',
+      'Preserves valid invite acceptance path'
+    )
+    assert(
+      resolveAuthRedirect('/dashboard') === '/dashboard',
+      'Preserves /dashboard destination'
+    )
+    assert(
+      resolveAuthRedirect('/workspace/team?filter=admin') === '/workspace/team?filter=admin',
+      'Preserves nested workspace route with query parameters'
+    )
+    assert(
+      resolveAuthRedirect('/datasets?sort=date&order=desc') === '/datasets?sort=date&order=desc',
+      'Preserves datasets route with multiple query parameters'
+    )
+
+    // Open redirect attacks & protocol evasion
+    assert(
+      resolveAuthRedirect('https://attacker-domain.com') === '/dashboard',
+      'Neutralizes external HTTPS scheme redirect to fallback'
+    )
+    assert(
+      resolveAuthRedirect('http://malicious.org/phish') === '/dashboard',
+      'Neutralizes external HTTP scheme redirect to fallback'
+    )
+    assert(
+      resolveAuthRedirect('//malicious-domain.com') === '/dashboard',
+      'Neutralizes protocol-relative double-slash bypass'
+    )
+    assert(
+      resolveAuthRedirect('/\\evil.com') === '/dashboard',
+      'Neutralizes backslash evasion sequence'
+    )
+    assert(
+      resolveAuthRedirect('\\\\attacker.com') === '/dashboard',
+      'Neutralizes Windows backslash UNC path'
+    )
+
+    // Circular auth loops
+    assert(
+      resolveAuthRedirect('/login') === '/dashboard',
+      'Prevents circular redirect loop back to /login'
+    )
+    assert(
+      resolveAuthRedirect('/login?from=/dashboard') === '/dashboard',
+      'Prevents circular redirect loop back to /login with query params'
+    )
+    assert(
+      resolveAuthRedirect('/signup') === '/dashboard',
+      'Prevents circular redirect loop back to /signup'
+    )
+
+    // Empty, malformed, or missing inputs
+    assert(
+      resolveAuthRedirect(null) === '/dashboard',
+      'Safely defaults null input to /dashboard'
+    )
+    assert(
+      resolveAuthRedirect(undefined) === '/dashboard',
+      'Safely defaults undefined input to /dashboard'
+    )
+    assert(
+      resolveAuthRedirect('') === '/dashboard',
+      'Safely defaults empty string to /dashboard'
+    )
+    assert(
+      resolveAuthRedirect(12345) === '/dashboard',
+      'Safely defaults non-string input to /dashboard'
+    )
+    assert(
+      resolveAuthRedirect(null, '/custom-fallback') === '/custom-fallback',
+      'Respects custom fallback when input is invalid'
+    )
   }
 
   // -------------------------------------------------------------------------
