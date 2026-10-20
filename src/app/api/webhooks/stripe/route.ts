@@ -27,9 +27,10 @@ export async function POST(req: NextRequest) {
     }
 
     event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
-  } catch (err: any) {
-    console.error(`Webhook signature verification failed: ${err.message}`)
-    return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Invalid signature'
+    console.error(`Webhook signature verification failed: ${message}`)
+    return NextResponse.json({ error: `Webhook Error: ${message}` }, { status: 400 })
   }
 
   // Event-ID Idempotency: verify event was not already processed
@@ -57,7 +58,9 @@ export async function POST(req: NextRequest) {
           if (org) {
             const subId = typeof session.subscription === 'string'
               ? session.subscription
-              : (session.subscription as any)?.id
+              : typeof session.subscription === 'object' && session.subscription !== null
+                ? (session.subscription as Stripe.Subscription).id
+                : undefined
 
             let periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
             let priceId: string | undefined
@@ -65,7 +68,8 @@ export async function POST(req: NextRequest) {
             if (subId) {
               try {
                 const sub = await stripe.subscriptions.retrieve(subId)
-                const rawEnd = sub.items?.data?.[0]?.current_period_end ?? (sub as any).current_period_end ?? (sub as any).billing_cycle_anchor
+                const subObj = sub as unknown as { current_period_end?: number; billing_cycle_anchor?: number }
+                const rawEnd = sub.items?.data?.[0]?.current_period_end ?? subObj.current_period_end ?? subObj.billing_cycle_anchor
                 if (rawEnd) {
                   periodEnd = new Date(rawEnd * 1000)
                 }
@@ -77,7 +81,9 @@ export async function POST(req: NextRequest) {
 
             const customerId = typeof session.customer === 'string'
               ? session.customer
-              : (session.customer as any)?.id
+              : typeof session.customer === 'object' && session.customer !== null
+                ? (session.customer as Stripe.Customer).id
+                : undefined
 
             await prisma.$transaction([
               prisma.processedStripeEvent.create({ data: { id: event.id } }),
@@ -143,7 +149,8 @@ export async function POST(req: NextRequest) {
               mappedStatus = 'INACTIVE'
           }
 
-          const rawPeriodEnd = sub.items?.data?.[0]?.current_period_end ?? (sub as any).current_period_end ?? (sub as any).billing_cycle_anchor
+          const subObj = sub as unknown as { current_period_end?: number; billing_cycle_anchor?: number }
+          const rawPeriodEnd = sub.items?.data?.[0]?.current_period_end ?? subObj.current_period_end ?? subObj.billing_cycle_anchor
           const currentPeriodEnd = rawPeriodEnd ? new Date(rawPeriodEnd * 1000) : undefined
 
           // Sync plan strictly from Price ID (or fallback to FREE if canceled)
@@ -235,9 +242,17 @@ export async function POST(req: NextRequest) {
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice
+        const invoiceObj = invoice as unknown as {
+          parent?: { subscription_details?: { subscription?: string } }
+          subscription?: string | { id: string } | null
+        }
         const subscriptionId =
-          (invoice as any).parent?.subscription_details?.subscription ??
-          (invoice as any).subscription as string | undefined
+          invoiceObj.parent?.subscription_details?.subscription ??
+          (typeof invoiceObj.subscription === 'string'
+            ? invoiceObj.subscription
+            : typeof invoiceObj.subscription === 'object' && invoiceObj.subscription !== null
+              ? invoiceObj.subscription.id
+              : undefined)
 
         if (subscriptionId) {
           const org = await prisma.organization.findFirst({
@@ -283,8 +298,9 @@ export async function POST(req: NextRequest) {
     // Record processed event for unhandled types or events where no org matched
     await prisma.processedStripeEvent.create({ data: { id: event.id } }).catch(() => {})
     return NextResponse.json({ received: true })
-  } catch (error: any) {
-    if (error?.code === 'P2002') {
+  } catch (error: unknown) {
+    const errorObj = error as { code?: string } | undefined
+    if (errorObj?.code === 'P2002') {
       console.log(`[Stripe Webhook] Duplicate event handled concurrently: ${event.id}`)
       return NextResponse.json({ received: true, deduplicated: true })
     }

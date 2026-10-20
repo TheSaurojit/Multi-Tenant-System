@@ -14,10 +14,10 @@ import {
   FileText,
   CreditCard,
   Settings,
-  Terminal,
 } from 'lucide-react'
 import { AuditAction, Prisma } from '../../../.././../generated/prisma'
 import { getPlanLimits } from '@/lib/plans'
+import { getRetentionCutoff } from '@/lib/feature-limits'
 
 export default async function AuditLogsPage({
   searchParams,
@@ -79,7 +79,7 @@ export default async function AuditLogsPage({
       ? (resolvedParams.action as AuditAction)
       : undefined;
 
-  const retentionCutoff = new Date(Date.now() - planLimits.retentionDays * 24 * 60 * 60 * 1000)
+  const retentionCutoff = getRetentionCutoff(org?.plan || 'FREE')
 
   const whereClause: Prisma.AuditLogWhereInput = {
     organizationId: currentUser.activeOrgId,

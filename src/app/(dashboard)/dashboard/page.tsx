@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { BarChart3 } from 'lucide-react'
 
 import { getPlanLimits } from '@/lib/plans'
+import { getRetentionCutoff } from '@/lib/feature-limits'
 import { Prisma } from '../../../../generated/prisma'
 
 export default async function DashboardPage({
@@ -78,7 +79,7 @@ export default async function DashboardPage({
   const planLimits = getPlanLimits(org?.plan || 'FREE')
 
   // Fetch recent data points for current filter
-  const retentionCutoff = new Date(Date.now() - planLimits.retentionDays * 24 * 60 * 60 * 1000)
+  const retentionCutoff = getRetentionCutoff(org?.plan || 'FREE')
   let effectiveRecentStart = startDate
   if (!effectiveRecentStart || effectiveRecentStart < retentionCutoff) {
     effectiveRecentStart = retentionCutoff

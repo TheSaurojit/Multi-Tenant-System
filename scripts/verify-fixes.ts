@@ -6,12 +6,8 @@ import {
   SignupSchema,
   SaveReportSchema,
   EntityIdSchema,
-  ExportCsvFilterSchema,
   PlanSchema,
-  AcceptInviteSchema,
 } from '../src/lib/validations'
-import { getPlanLimits } from '../src/lib/plans'
-import { checkFeatureLimit, getRetentionCutoff } from '../src/lib/feature-limits'
 import { hasPermission } from '../src/lib/permissions'
 import { exportDataPointsToCsv, getWorkspaceAnalytics } from '../src/lib/analytics-engine'
 import fs from 'fs'
@@ -101,8 +97,8 @@ async function runFixesVerification() {
     let threw = false
     try {
       getJwtSecret()
-    } catch (e: any) {
-      threw = e.message.includes('FATAL: JWT_SECRET')
+    } catch (e: unknown) {
+      threw = e instanceof Error && e.message.includes('FATAL: JWT_SECRET')
     }
     assert(threw, 'Throws fatal error when JWT_SECRET is shorter than 32 characters')
   } finally {
@@ -125,8 +121,8 @@ async function runFixesVerification() {
         userEmail: 'test@example.com',
         returnUrl: 'http://localhost:3000',
       })
-    } catch (e: any) {
-      checkoutThrew = e.message.includes('Stripe billing is not configured')
+    } catch (e: unknown) {
+      checkoutThrew = e instanceof Error && e.message.includes('Stripe billing is not configured')
     }
     assert(checkoutThrew, 'createCheckoutSession rejects requests when STRIPE_SECRET_KEY is a placeholder (no free upgrades)')
   } finally {
@@ -153,9 +149,9 @@ async function runFixesVerification() {
 
   const analytics = await getWorkspaceAnalytics({
     organizationId: acmeOrg!.id,
-    workspaceId: acmeWorkspace?.id,
+    workspaceId: acmeWorkspace?.id || '',
     range: 'last90',
-  } as any)
+  })
 
   assert(analytics.kpis !== undefined, 'Analytics KPIs calculated successfully')
   assert(

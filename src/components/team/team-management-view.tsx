@@ -3,14 +3,11 @@
 import React, { useState } from 'react'
 import {
   UserPlus,
-  Shield,
   Copy,
   Check,
   Trash2,
-  Clock,
   CheckCircle2,
   Mail,
-  AlertCircle,
   Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -18,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import { CurrentUser } from '@/lib/auth'
 import { useAuth } from '@/contexts/auth-context'
-import { getRoleBadgeClass, hasPermission } from '@/lib/permissions'
+import { getRoleBadgeClass } from '@/lib/permissions'
 import {
   inviteMemberAction,
   revokeInviteAction,

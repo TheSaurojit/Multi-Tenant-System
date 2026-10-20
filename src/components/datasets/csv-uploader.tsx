@@ -27,7 +27,7 @@ export function CsvUploader({ maxRows, onSuccess }: CsvUploaderProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewData, setPreviewData] = useState<{
     headers: string[]
-    rows: any[]
+    rows: Record<string, unknown>[]
     totalRows: number
     detectedType: string
   } | null>(null)
@@ -82,7 +82,7 @@ export function CsvUploader({ maxRows, onSuccess }: CsvUploaderProps) {
         const detected = detectDatasetType(headers)
         setPreviewData({
           headers,
-          rows: results.data.slice(0, 5),
+          rows: results.data.slice(0, 5) as Record<string, unknown>[],
           totalRows: results.data.length,
           detectedType: detected,
         })
@@ -287,7 +287,7 @@ export function CsvUploader({ maxRows, onSuccess }: CsvUploaderProps) {
                     <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
                       {previewData.headers.map((h) => (
                         <td key={h} className="py-1.5 px-3 whitespace-nowrap text-zinc-700 dark:text-zinc-300">
-                          {row[h] || '—'}
+                          {row[h] !== undefined && row[h] !== null && row[h] !== '' ? String(row[h]) : '—'}
                         </td>
                       ))}
                     </tr>

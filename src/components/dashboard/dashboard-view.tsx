@@ -3,26 +3,20 @@
 import React, { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
-  DollarSign,
   TrendingUp,
   TrendingDown,
-  ShoppingBag,
-  Layers,
   Calendar,
   Filter,
   Download,
   BookmarkPlus,
   ArrowUpRight,
   Database,
-  Check,
 } from 'lucide-react'
 import { DashboardCharts } from './dashboard-charts'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import { CurrentUser } from '@/lib/auth'
 import { useAuth } from '@/contexts/auth-context'
-import { hasPermission } from '@/lib/permissions'
 import { saveReportAction } from '@/app/actions/report-actions'
 import Link from 'next/link'
 import {
@@ -67,6 +61,17 @@ interface DashboardViewProps {
   retentionInfo?: RetentionInfo
 }
 
+function getNextPlanRetentionCta(currentPlan?: string): string {
+  const normalized = currentPlan?.toUpperCase()
+  if (normalized === 'FREE') {
+    return 'Upgrade to Pro for 365-day history'
+  }
+  if (normalized === 'PRO') {
+    return 'Upgrade to Advanced for 3-year history'
+  }
+  return 'Manage retention in Billing'
+}
+
 export function DashboardView({
   kpis,
   timeSeries,
@@ -75,13 +80,11 @@ export function DashboardView({
   datasets,
   savedReports,
   recentPoints,
-  currentUser: propUser,
   isMarketing,
   canExportCsv = true,
   retentionInfo,
 }: DashboardViewProps) {
   const auth = useAuth()
-  const currentUser = propUser || auth.currentUser
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -139,8 +142,8 @@ export function DashboardView({
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
-    } catch (err: any) {
-      alert(err.message || 'CSV export failed.')
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'CSV export failed.')
     } finally {
       setIsExporting(false)
     }
@@ -334,7 +337,7 @@ export function DashboardView({
             href="/workspace/billing"
             className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 underline shrink-0"
           >
-            Upgrade for 365-day history <ArrowUpRight className="w-3.5 h-3.5" />
+            {getNextPlanRetentionCta(retentionInfo.plan)} <ArrowUpRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       )}

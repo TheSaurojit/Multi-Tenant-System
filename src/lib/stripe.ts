@@ -1,7 +1,6 @@
 import "server-only";
 import Stripe from 'stripe'
 import { prisma } from './db'
-import { logAuditEvent } from './audit'
 import { Plan } from "../../generated/prisma";
 
 export function isStripeConfigured(): boolean {

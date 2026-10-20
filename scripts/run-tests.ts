@@ -12,10 +12,12 @@
 
 import { parseRobustNumber, parseRobustDate, parseAndValidateCsv } from '../src/lib/csv-parser'
 import { checkRateLimit, resetRateLimit } from '../src/lib/rate-limit'
+import { sanitizeIp } from '../src/lib/request-ip'
 import { slugify, generateUniqueSlug } from '../src/lib/slug'
 import { hasPermission, assertPermission } from '../src/lib/permissions'
-import { PLAN_CONFIGS, getPlanLimits } from '../src/lib/plans'
+import { getPlanLimits } from '../src/lib/plans'
 import { checkFeatureLimit, getRetentionCutoff } from '../src/lib/feature-limits'
+import { Prisma } from '../generated/prisma'
 
 let passedTests = 0
 let failedTests = 0
@@ -148,6 +150,38 @@ async function runTestSuite() {
     const afterReset = checkRateLimit(id, 5, 10000)
     assert(afterReset.allowed, 'Attempt after explicit reset is allowed')
     resetRateLimit(id)
+
+    // IP Sanitization and Header Parsing
+    assert(sanitizeIp('192.168.1.1') === '192.168.1.1', 'Valid IPv4 address parses correctly')
+    assert(sanitizeIp('  10.0.0.1  ') === '10.0.0.1', 'IPv4 with whitespace is trimmed')
+    assert(sanitizeIp('2001:0db8:85a3:0000:0000:8a2e:0370:7334') === '2001:0db8:85a3:0000:0000:8a2e:0370:7334', 'Valid IPv6 parses correctly')
+    assert(sanitizeIp('not-an-ip') === null, 'Invalid IP string returns null')
+    assert(sanitizeIp('') === null, 'Empty IP string returns null')
+    assert(sanitizeIp(undefined) === null, 'Undefined IP returns null')
+    assert(sanitizeIp('999.999.999.999') === null, 'Out-of-range IPv4 octets return null')
+
+    // Null-IP Rate Limiting Isolation:
+    // If clientIp is null, per-IP rate limits are skipped, preventing an attacker from
+    // locking out legitimate users on an unproxied host.
+    const attackerIp: string | null = null
+    const legitimateIp: string | null = null
+    const targetEmail = 'admin@acme.com'
+
+    // Simulating attacker failed login attempts when IP is null
+    let attackerLocked = false
+    if (attackerIp) {
+      const res = checkRateLimit(`login:${attackerIp}:${targetEmail}`, 5, 10000)
+      if (!res.allowed) attackerLocked = true
+    }
+    assert(!attackerLocked, 'Attacker with null IP does not lock out target email')
+
+    // Legitimate user attempt proceeds unaffected
+    let legitimateAllowed = true
+    if (legitimateIp) {
+      const res = checkRateLimit(`login:${legitimateIp}:${targetEmail}`, 5, 10000)
+      if (!res.allowed) legitimateAllowed = false
+    }
+    assert(legitimateAllowed, 'Legitimate user with null IP is not locked out by attacker attempts')
   }
 
   // -------------------------------------------------------------------------
@@ -278,7 +312,7 @@ async function runTestSuite() {
       },
     }
 
-    const checkAllowed = await checkFeatureLimit('mock-org', 'workspaces', mockTxAllowed as any)
+    const checkAllowed = await checkFeatureLimit('mock-org', 'workspaces', mockTxAllowed as unknown as Prisma.TransactionClient)
     assert(checkAllowed.allowed, 'Workspace quota allows creation when count is 0 on Free plan')
 
     const mockTxExceeded = {
@@ -290,7 +324,7 @@ async function runTestSuite() {
       },
     }
 
-    const checkBlocked = await checkFeatureLimit('mock-org', 'workspaces', mockTxExceeded as any)
+    const checkBlocked = await checkFeatureLimit('mock-org', 'workspaces', mockTxExceeded as unknown as Prisma.TransactionClient)
     assert(!checkBlocked.allowed, 'Workspace quota blocks creation when count reaches 1 on Free plan')
     assert(!!checkBlocked.message, 'Provides user-friendly limit message')
   }

@@ -52,20 +52,21 @@ export async function loginAction(formData: FormData) {
   const normalizedEmail = email.toLowerCase().trim()
   const clientIp = await getClientIp()
 
-  // Keyed by IP + email so an attacker cannot lock out a victim by spamming
-  // failed logins for a known email from their own machine.
-  const perIdentity = checkRateLimit(`login:${clientIp}:${normalizedEmail}`, 5, 15 * 60 * 1000)
-  if (!perIdentity.allowed) {
-    return {
-      error: `Too many login attempts. Please try again in ${perIdentity.resetInSeconds} seconds.`,
+  // Rate limiting per IP + email and per IP (only when client IP can be verified,
+  // preventing unknown / unproxied clients from sharing a global rate-limit bucket).
+  if (clientIp) {
+    const perIdentity = checkRateLimit(`login:${clientIp}:${normalizedEmail}`, 5, 15 * 60 * 1000)
+    if (!perIdentity.allowed) {
+      return {
+        error: `Too many login attempts. Please try again in ${perIdentity.resetInSeconds} seconds.`,
+      }
     }
-  }
 
-  // Secondary per-IP cap: stops credential-stuffing that rotates emails.
-  const perIp = checkRateLimit(`login-ip:${clientIp}`, 30, 15 * 60 * 1000)
-  if (!perIp.allowed) {
-    return {
-      error: `Too many login attempts. Please try again in ${perIp.resetInSeconds} seconds.`,
+    const perIp = checkRateLimit(`login-ip:${clientIp}`, 30, 15 * 60 * 1000)
+    if (!perIp.allowed) {
+      return {
+        error: `Too many login attempts. Please try again in ${perIp.resetInSeconds} seconds.`,
+      }
     }
   }
 
@@ -107,7 +108,9 @@ export async function loginAction(formData: FormData) {
   // Clear the per-identity counter on successful credentials.
   // The per-IP counter intentionally survives: a valid login must not reset
   // the credential-stuffing budget shared across emails.
-  resetRateLimit(`login:${clientIp}:${normalizedEmail}`)
+  if (clientIp) {
+    resetRateLimit(`login:${clientIp}:${normalizedEmail}`)
+  }
 
   if (user.memberships.length === 0) {
     return { error: 'Account has no active organization workspaces.' }
@@ -123,7 +126,18 @@ export async function loginAction(formData: FormData) {
   })
   await setAuthCookies(token, defaultOrgId, defaultWorkspaceId)
 
-  redirect('/dashboard')
+  const rawFrom = formData.get('from')
+  let redirectTo = '/dashboard'
+  if (
+    typeof rawFrom === 'string' &&
+    rawFrom.startsWith('/') &&
+    !rawFrom.startsWith('//') &&
+    !rawFrom.includes('\\')
+  ) {
+    redirectTo = rawFrom
+  }
+
+  redirect(redirectTo)
 }
 
 export async function signupAction(formData: FormData) {
@@ -141,10 +155,12 @@ export async function signupAction(formData: FormData) {
   const { name, email, password, workspaceName } = parsed.data
 
   const clientIp = await getClientIp()
-  const signupLimit = checkRateLimit(`signup:${clientIp}`, 5, 60 * 60 * 1000)
-  if (!signupLimit.allowed) {
-    return {
-      error: `Too many signup attempts. Please try again in ${signupLimit.resetInSeconds} seconds.`,
+  if (clientIp) {
+    const signupLimit = checkRateLimit(`signup:${clientIp}`, 5, 60 * 60 * 1000)
+    if (!signupLimit.allowed) {
+      return {
+        error: `Too many signup attempts. Please try again in ${signupLimit.resetInSeconds} seconds.`,
+      }
     }
   }
 
@@ -206,7 +222,6 @@ export async function signupAction(formData: FormData) {
   })
 
   const orgId = user.memberships[0].organizationId
-  const initialWorkspaceId = user.memberships[0].organization.workspaces[0]?.id
 
   await logAuditEvent({
     organizationId: orgId,
@@ -437,10 +452,12 @@ export async function requestPasswordResetAction(formData: FormData) {
   const clientIp = await getClientIp()
 
   // Rate limiting per-IP (max 10 requests / hr) and per-email (max 3 requests / hr)
-  const ipLimit = checkRateLimit(`forgot-ip:${clientIp}`, 10, 60 * 60 * 1000)
-  if (!ipLimit.allowed) {
-    return {
-      error: `Too many password reset requests. Please try again in ${ipLimit.resetInSeconds} seconds.`,
+  if (clientIp) {
+    const ipLimit = checkRateLimit(`forgot-ip:${clientIp}`, 10, 60 * 60 * 1000)
+    if (!ipLimit.allowed) {
+      return {
+        error: `Too many password reset requests. Please try again in ${ipLimit.resetInSeconds} seconds.`,
+      }
     }
   }
 
@@ -665,8 +682,10 @@ export async function resendVerificationEmailAction(formData: FormData) {
   const { email } = parsed.data
   const normalizedEmail = email.toLowerCase().trim()
   const clientIp = await getClientIp()
-
-  const rate = checkRateLimit(`resend-verify:${clientIp}:${normalizedEmail}`, 3, 60 * 60 * 1000)
+  const rateLimitKey = clientIp
+    ? `resend-verify:${clientIp}:${normalizedEmail}`
+    : `resend-verify:${normalizedEmail}`
+  const rate = checkRateLimit(rateLimitKey, 3, 60 * 60 * 1000)
   if (!rate.allowed) {
     return {
       error: `Too many verification requests. Please try again in ${rate.resetInSeconds} seconds.`,

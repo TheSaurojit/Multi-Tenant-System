@@ -174,7 +174,18 @@ STRIPE_ADVANCED_PRICE_ID="price_..."
 # -----------------------------------------------------------------------------
 RESEND_API_KEY="re_..."
 RESEND_FROM_EMAIL="SaaS Analytics <onboarding@resend.dev>"
+
+# -----------------------------------------------------------------------------
+# 5. Reverse Proxy & Security Headers (REQUIRED in Production / Docker / VPS)
+# -----------------------------------------------------------------------------
+TRUSTED_IP_HEADER="x-forwarded-for"   # e.g. "x-forwarded-for", "cf-connecting-ip", "x-real-ip"
+FORCE_HTTPS="false"                  # Set to "true" behind TLS-terminating reverse proxies
 ```
+
+> [!IMPORTANT]
+> **Reverse Proxy & Client IP Configuration (`TRUSTED_IP_HEADER` & `FORCE_HTTPS`):**  
+> In production environments (Docker, VPS, Kubernetes, AWS, Nginx, Cloudflare), set `TRUSTED_IP_HEADER` to the header provided by your ingress proxy. This allows per-IP rate-limiting and security audit logs to track real client IPs accurately. On Vercel, this is auto-detected via `x-vercel-forwarded-for`. If unconfigured in production, startup will fail with a clear prompt to prevent security misconfigurations.  
+> Set `FORCE_HTTPS="true"` if your reverse proxy terminates TLS while the upstream Node service runs on plain HTTP, ensuring HSTS and CSP `upgrade-insecure-requests` are applied.
 
 ### 3. Start PostgreSQL Database
 Choose  local Docker  database:
@@ -275,9 +286,11 @@ When running `npm run db:seed`, the following demo accounts are created with pas
 
 ### 3. Uploading CSV Data
 - Navigate to **Datasets** or click **"Upload CSV"** in the top navigation header.
-- **Ready-to-use Sample Datasets:** You can immediately test uploading using the sample files included in the repository:
-  - `public/samples/sales-data.csv` (Tests `SALES` schema: revenue, cost, orders, regions, products)
-  - `public/samples/marketing-data.csv` (Tests `MARKETING` schema: campaigns, channels, spend, clicks, conversions)
+- **Ready-to-use Sample Datasets:** You can download freshly generated sample files directly from the `/datasets` page or via the API (`/api/samples/sales-data.csv` and `/api/samples/marketing-data.csv`):
+  - `sales-data.csv` (Tests `SALES` schema: revenue, cost, orders, regions, products)
+  - `marketing-data.csv` (Tests `MARKETING` schema: campaigns, channels, spend, clicks, conversions)
+  > [!NOTE]
+  > **Dynamic Date Generation & Retention:** Sample CSV downloads generate dates dynamically relative to the current date (`today - 14 days` to `today`). This ensures that uploads on the Free plan (which has a 30-day data retention window) immediately populate KPIs, charts, and summaries without historical rows being trimmed by retention.
 - Drag and drop either file into the upload dropzone. The platform automatically detects the dataset schema, computes summary statistics, and generates KPI visualizations.
 
 ### 4. Custom Reports & Filters

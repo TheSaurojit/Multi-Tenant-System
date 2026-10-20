@@ -8,6 +8,21 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   )
 }
 
+if (
+  process.env.NODE_ENV === 'production' &&
+  !process.env.VERCEL &&
+  !process.env.TRUSTED_IP_HEADER &&
+  process.env.ALLOW_UNTRUSTED_IPS !== 'true' &&
+  process.env.NEXT_PHASE !== 'phase-production-build'
+) {
+  throw new Error(
+    'FATAL: TRUSTED_IP_HEADER is required in production when not running on Vercel.\n' +
+    'Specify your reverse proxy client IP header (e.g., "x-forwarded-for", "cf-connecting-ip", "x-real-ip")\n' +
+    'in .env to prevent shared-IP rate-limiting lockouts and ensure accurate audit logs.\n' +
+    'See .env.example and README.md. (Set ALLOW_UNTRUSTED_IPS=true only if you explicitly choose to bypass).'
+  )
+}
+
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET)
 
 async function isValidSessionToken(token: string): Promise<boolean> {
@@ -25,9 +40,6 @@ export async function proxy(request: NextRequest) {
 
   const protectedPaths = ['/dashboard', '/datasets', '/reports', '/workspace', '/organization']
   const isProtected = protectedPaths.some((p) => pathname.startsWith(p))
-
-  const authPaths = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email']
-  const isAuthPage = authPaths.some((p) => pathname.startsWith(p))
 
   if (isProtected) {
     // If no token exists, immediately redirect to login
@@ -50,8 +62,6 @@ export async function proxy(request: NextRequest) {
     }
   }
 
- 
-
   return NextResponse.next()
 }
 
@@ -62,10 +72,5 @@ export const config = {
     '/reports/:path*',
     '/workspace/:path*',
     '/organization/:path*',
-    '/login',
-    '/signup',
-    '/forgot-password',
-    '/reset-password',
-    '/verify-email',
   ],
 }

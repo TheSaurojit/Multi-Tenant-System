@@ -77,7 +77,7 @@ export function AuthGuard({
   fallback,
   children,
 }: AuthGuardProps) {
-  const { role, currentPlan, can, hasRole } = useAuth()
+  const { currentPlan, can, hasRole } = useAuth()
 
   // 1. Role Check
   if (requiredRoles && requiredRoles.length > 0) {

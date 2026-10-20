@@ -9,7 +9,6 @@ import {
   History,
   Users,
   ArrowRight,
-  FileSpreadsheet,
   CheckCircle2,
   Sparkles,
 } from 'lucide-react'

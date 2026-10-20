@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, Suspense } from 'react'
+import React, { useState, useEffect, useRef, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { verifyEmailAction, resendVerificationEmailAction } from '@/app/actions/auth-actions'
@@ -20,30 +20,34 @@ function VerifyEmailContent() {
   const [error, setError] = useState<string | null>(null)
   const [resendMessage, setResendMessage] = useState<string | null>(null)
   const [resending, setResending] = useState(false)
+  const hasTriggeredRef = useRef(false)
 
   // If a token is provided in query params, attempt verification automatically on mount
   useEffect(() => {
-    if (token && !verified && !error && !verifying) {
-      setVerifying(true)
-      const formData = new FormData()
-      formData.append('token', token)
+    if (token && !verified && !error && !hasTriggeredRef.current) {
+      hasTriggeredRef.current = true
+      const verify = async () => {
+        setVerifying(true)
+        const formData = new FormData()
+        formData.append('token', token)
 
-      verifyEmailAction(formData)
-        .then((res) => {
+        try {
+          const res = await verifyEmailAction(formData)
           if (res && 'error' in res) {
             setError(res.error || 'Verification failed.')
           } else if (res && 'success' in res) {
             setVerified(true)
           }
-        })
-        .catch(() => {
+        } catch {
           setError('An unexpected error occurred while verifying your email.')
-        })
-        .finally(() => {
+        } finally {
           setVerifying(false)
-        })
+        }
+      }
+
+      void verify()
     }
-  }, [token, verified, error, verifying])
+  }, [token, verified, error])
 
   const handleResend = async (e: React.SubmitEvent) => {
     e.preventDefault()

@@ -36,8 +36,9 @@ export async function checkoutPlanAction(plan: Plan) {
       returnUrl: `${appUrl}/workspace/billing`,
     })
     checkoutUrl = session.url
-  } catch (err: any) {
-    return { error: err.message || 'Failed to initiate checkout.' }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to initiate checkout.'
+    return { error: message }
   }
 
   redirect(checkoutUrl)
@@ -56,8 +57,9 @@ export async function openBillingPortalAction() {
       returnUrl: `${appUrl}/workspace/billing`,
     })
     portalUrl = session.url
-  } catch (err: any) {
-    return { error: err.message || 'Failed to open billing portal.' }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to open billing portal.'
+    return { error: message }
   }
 
   redirect(portalUrl)
@@ -98,16 +100,17 @@ export async function downgradeToFreeAction() {
   if (org?.stripeSubscriptionId && !org.stripeSubscriptionId.startsWith('sub_simulated')) {
     try {
       await stripe.subscriptions.cancel(org.stripeSubscriptionId)
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorObj = err as { code?: string; message?: string } | undefined
       const isAlreadyCanceled =
-        err?.code === 'resource_missing' ||
-        err?.message?.toLowerCase().includes('already canceled') ||
-        err?.message?.toLowerCase().includes('already been canceled')
+        errorObj?.code === 'resource_missing' ||
+        errorObj?.message?.toLowerCase().includes('already canceled') ||
+        errorObj?.message?.toLowerCase().includes('already been canceled')
 
       if (!isAlreadyCanceled) {
         console.error('Failed to cancel Stripe subscription during downgrade:', err)
         return {
-          error: `Failed to cancel active subscription with Stripe: ${err?.message || 'Payment provider error'}. Your plan was not modified.`,
+          error: `Failed to cancel active subscription with Stripe: ${errorObj?.message || 'Payment provider error'}. Your plan was not modified.`,
         }
       }
     }

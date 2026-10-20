@@ -8,6 +8,7 @@ import { getPlanLimits } from '@/lib/plans'
 import { ExportCsvFilterSchema } from '@/lib/validations'
 import { exportDataPointsToCsv, resolveDateRange } from '@/lib/analytics-engine'
 import { logAuditEvent } from '@/lib/audit'
+import { Prisma } from '../../../../../generated/prisma'
 
 export async function GET(req: NextRequest) {
   try {
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest) {
       effectiveStartDate = retentionCutoff
     }
 
-    const whereClause: any = {
+    const whereClause: Prisma.DataPointWhereInput = {
       organizationId: user.activeOrgId,
       workspaceId: user.activeWorkspaceId,
       dataset: { status: 'COMPLETED' },
@@ -139,11 +140,12 @@ export async function GET(req: NextRequest) {
         'Content-Disposition': `attachment; filename="workspace-export-${dateTag}.csv"`,
       },
     })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Export route error:', err)
+    const errMsg = err instanceof Error ? err.message : 'CSV export failed.'
     return NextResponse.json(
-      { error: err?.message || 'CSV export failed.' },
-      { status: err?.message?.includes('Unauthorized') ? 401 : 500 }
+      { error: errMsg },
+      { status: errMsg.includes('Unauthorized') ? 401 : 500 }
     )
   }
 }

@@ -1,8 +1,7 @@
 import React from 'react'
 import { requireAuthUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { FileText, ArrowUpRight, Trash2, Calendar, Database, Tag } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { FileText, ArrowUpRight, Trash2, Calendar, Tag } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { hasPermission } from '@/lib/permissions'
 import { deleteReportAction } from '@/app/actions/report-actions'
@@ -52,7 +51,7 @@ export default async function SavedReportsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {reports.map((report) => {
-            const filters = (report.filters as any) || {}
+            const filters = (report.filters as Record<string, string | undefined>) || {}
             const reportParams = new URLSearchParams()
             if (filters.datasetId) reportParams.set('datasetId', filters.datasetId)
             if (filters.range) reportParams.set('range', filters.range)

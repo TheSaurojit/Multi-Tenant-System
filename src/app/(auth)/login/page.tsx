@@ -1,12 +1,15 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { loginAction } from '@/app/actions/auth-actions'
 import { Button } from '@/components/ui/button'
 import { BarChart3, ShieldCheck, UserCheck, Eye, Sparkles } from 'lucide-react'
 
-export default function LoginPage() {
+function LoginForm() {
+  const searchParams = useSearchParams()
+  const from = searchParams.get('from') || ''
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +32,9 @@ export default function LoginPage() {
     const formData = new FormData()
     formData.append('email', email)
     formData.append('password', password)
+    if (from) {
+      formData.append('from', from)
+    }
 
     const res = await loginAction(formData)
     if (res?.error) {
@@ -73,6 +79,7 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {from && <input type="hidden" name="from" value={from} />}
             <div>
               <label className="block text-xs font-medium text-zinc-300 mb-1">
                 Work Email
@@ -173,12 +180,36 @@ export default function LoginPage() {
 
           <p className="mt-6 text-center text-xs text-zinc-400">
             Don&apos;t have an organization workspace?{' '}
-            <Link href="/signup" className="font-semibold text-indigo-400 hover:text-indigo-300">
+            <Link
+              href={from ? `/signup?from=${encodeURIComponent(from)}` : '/signup'}
+              className="font-semibold text-indigo-400 hover:text-indigo-300"
+            >
               Create one now
             </Link>
           </p>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-indigo-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-zinc-100">
+          <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-500/30 mb-3 animate-pulse">
+              <BarChart3 className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight text-white">
+              Multi-Tenant SaaS Analytics
+            </h2>
+          </div>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   )
 }

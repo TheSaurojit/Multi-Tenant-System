@@ -125,9 +125,9 @@ export async function sendSignupWelcomeEmail({
       html,
     })
     return { success: true, id: data.data?.id }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Resend Error] Failed to send signup welcome email:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to send welcome email' }
   }
 }
 
@@ -192,9 +192,9 @@ export async function sendEmailVerificationEmail({
       html,
     })
     return { success: true, id: data.data?.id }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Resend Error] Failed to send email verification email:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to send verification email' }
   }
 }
 
@@ -259,9 +259,9 @@ export async function sendForgotPasswordEmail({
       html,
     })
     return { success: true, id: data.data?.id }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Resend Error] Failed to send password reset email:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to send password reset email' }
   }
 }
 
@@ -322,9 +322,9 @@ export async function sendPasswordResetSuccessEmail({
       html,
     })
     return { success: true, id: data.data?.id }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Resend Error] Failed to send password reset success email:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to send confirmation email' }
   }
 }
 
@@ -390,8 +390,8 @@ export async function sendWorkspaceInviteEmail({
       html,
     })
     return { success: true, id: data.data?.id }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Resend Error] Failed to send workspace invite email:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error instanceof Error ? error.message : 'Failed to send invite email' }
   }
 }

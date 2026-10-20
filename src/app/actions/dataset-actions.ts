@@ -8,6 +8,7 @@ import { checkFeatureLimit, getPlanLimits } from '@/lib/feature-limits'
 import { parseAndValidateCsv } from '@/lib/csv-parser'
 import { EntityIdSchema } from '@/lib/validations'
 import { revalidatePath } from 'next/cache'
+import { Prisma } from '../../../generated/prisma'
 
 export async function uploadCsvAction(formData: FormData) {
   const user = await getCurrentUser()
@@ -104,7 +105,7 @@ export async function uploadCsvAction(formData: FormData) {
           metric3: p.metric3,
           region: p.region,
           channel: p.channel,
-          metadata: p.metadata ? (p.metadata as any) : undefined,
+          metadata: p.metadata ? (p.metadata as Prisma.InputJsonValue) : undefined,
         })),
       })
     }
@@ -142,7 +143,7 @@ export async function uploadCsvAction(formData: FormData) {
       rowCount: points.length,
       type: validation.detectedType,
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Ingestion failed:', err)
     // Atomic ingestion guarantee: clean up partial orphan data points so dataset never leaves corrupted data
     try {
@@ -153,11 +154,12 @@ export async function uploadCsvAction(formData: FormData) {
       console.warn('Failed to clean up orphan data points:', cleanupErr)
     }
 
+    const errorMessage = err instanceof Error ? err.message : 'Failed to process CSV records.'
     await prisma.dataset.update({
       where: { id: dataset.id },
       data: {
         status: 'FAILED',
-        errorMessage: (err?.message || 'Failed to process CSV records.').slice(0, 500),
+        errorMessage: errorMessage.slice(0, 500),
         rowCount: 0,
       },
     })

@@ -5,7 +5,6 @@ import { CsvUploader } from '@/components/datasets/csv-uploader'
 import { PermissionGate } from '@/components/auth/auth-guard'
 import { getPlanLimits } from '@/lib/feature-limits'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { hasPermission } from '@/lib/permissions'
 import { deleteDatasetAction } from '@/app/actions/dataset-actions'
@@ -19,7 +18,6 @@ import {
   CheckCircle2,
   Clock,
   AlertTriangle,
-  ArrowUpRight,
 } from 'lucide-react'
 
 export default async function DatasetsPage() {
@@ -43,7 +41,6 @@ export default async function DatasetsPage() {
     orderBy: { createdAt: 'desc' },
   })
 
-  const canUpload = hasPermission(currentUser.role, 'datasets:upload')
   const canDelete = hasPermission(currentUser.role, 'datasets:delete')
 
   return (
@@ -77,7 +74,7 @@ export default async function DatasetsPage() {
 
         <div className="flex items-center gap-2 shrink-0">
           <a
-            href="/samples/sales-data.csv"
+            href="/api/samples/sales-data.csv"
             download="sales-data.csv"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-750 shadow-xs transition-colors"
           >
@@ -85,7 +82,7 @@ export default async function DatasetsPage() {
             Sample Sales CSV
           </a>
           <a
-            href="/samples/marketing-data.csv"
+            href="/api/samples/marketing-data.csv"
             download="marketing-data.csv"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-750 shadow-xs transition-colors"
           >

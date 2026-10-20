@@ -12,8 +12,6 @@ import {
   BarChart,
   Bar,
   Cell,
-  PieChart,
-  Pie,
 } from 'recharts'
 import { TimeSeriesPoint, CategoryBreakdownPoint } from '@/lib/analytics-engine'
 

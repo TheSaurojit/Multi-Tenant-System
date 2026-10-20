@@ -2,21 +2,16 @@
 
 import React, { useState } from 'react'
 import {
-  CreditCard,
   Check,
   Zap,
   Sparkles,
   ShieldCheck,
-  AlertCircle,
-  Clock,
-  ArrowRight,
   ExternalLink,
   Layers,
-  Calendar,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { PLAN_CONFIGS, PlanLimits } from '@/lib/plans'
+import { PLAN_CONFIGS } from '@/lib/plans'
 import {
   checkoutPlanAction,
   openBillingPortalAction,

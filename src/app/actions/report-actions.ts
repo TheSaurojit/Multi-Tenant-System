@@ -15,7 +15,7 @@ export async function saveReportAction({
 }: {
   name: string
   description?: string
-  filters: any
+  filters: unknown
 }) {
   const parsed = SaveReportSchema.safeParse({ name, description, filters })
   if (!parsed.success) {

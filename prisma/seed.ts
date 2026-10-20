@@ -107,7 +107,7 @@ async function main() {
   })
 
   // Beta has FREE plan (allows 1 workspace): create 1 primary workspace
-  const betaMainWs = await prisma.workspace.create({
+  await prisma.workspace.create({
     data: {
       name: 'Beta Primary Workspace',
       slug: 'main',

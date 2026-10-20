@@ -319,10 +319,12 @@ export async function acceptInviteAction(token: string) {
   const validToken = parsed.data.token
 
   const clientIp = await getClientIp()
-  const acceptLimit = checkRateLimit(`invite-accept:${clientIp}`, 10, 60 * 60 * 1000)
-  if (!acceptLimit.allowed) {
-    return {
-      error: `Too many invitation attempts. Please try again in ${acceptLimit.resetInSeconds} seconds.`,
+  if (clientIp) {
+    const acceptLimit = checkRateLimit(`invite-accept:${clientIp}`, 10, 60 * 60 * 1000)
+    if (!acceptLimit.allowed) {
+      return {
+        error: `Too many invitation attempts. Please try again in ${acceptLimit.resetInSeconds} seconds.`,
+      }
     }
   }
 

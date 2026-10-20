@@ -28,7 +28,6 @@ import {
 } from '@/app/actions/auth-actions'
 import { getRoleBadgeClass, hasPermission, AppPermission } from '@/lib/permissions'
 import { PLAN_CONFIGS } from '@/lib/plans'
-import { Badge } from '@/components/ui/badge'
 
 interface SidebarProps {
   currentUser?: CurrentUser
@@ -85,7 +84,7 @@ export function Sidebar({
     if (mobileOpen) {
       onClose?.()
     }
-  }, [pathname])
+  }, [pathname, mobileOpen, onClose])
 
   // Close mobile sidebar on Escape key
   useEffect(() => {
