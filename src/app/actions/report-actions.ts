@@ -29,6 +29,9 @@ export async function saveReportAction({
   assertPermission(user.role, 'reports:create')
 
   const result = await prisma.$transaction(async (tx) => {
+    // Lock the organization row to serialize concurrent quota checks
+    await tx.$queryRaw`SELECT 1 FROM "Organization" WHERE id = ${user.activeOrgId} FOR UPDATE`
+
     const limitCheck = await checkFeatureLimit(user.activeOrgId, 'reports', tx)
     if (!limitCheck.allowed) {
       return { error: limitCheck.message }

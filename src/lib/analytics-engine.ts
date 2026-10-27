@@ -247,16 +247,16 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     }
   }
 
-  // 6. Distinct categories available in workspace within retention
-  const availableCategoriesPromise = prisma.dataPoint.findMany({
+  // 6. Distinct categories available in workspace within retention (Postgres GROUP BY via index)
+  const availableCategoriesPromise = prisma.dataPoint.groupBy({
+    by: ['category'],
     where: {
       organizationId: filter.organizationId,
       dataset: { status: 'COMPLETED' },
       ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
       date: { gte: retentionCutoff },
     },
-    distinct: ['category'],
-    select: { category: true },
+    orderBy: { category: 'asc' },
   })
 
   // 7. Datasets available in workspace

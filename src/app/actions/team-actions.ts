@@ -30,7 +30,7 @@ export async function inviteMemberAction({
 
   assertPermission(user.role, 'members:invite')
 
-  const inviteLimit = checkRateLimit(`invite:${user.id}`, 10, 60 * 60 * 1000)
+  const inviteLimit = await checkRateLimit(`invite:${user.id}`, 10, 60 * 60 * 1000)
   if (!inviteLimit.allowed) {
     return {
       error: `Too many invitations sent. Please try again in ${inviteLimit.resetInSeconds} seconds.`,
@@ -53,6 +53,9 @@ export async function inviteMemberAction({
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
 
   const result = await prisma.$transaction(async (tx) => {
+    // Lock the organization row to serialize concurrent quota checks
+    await tx.$queryRaw`SELECT 1 FROM "Organization" WHERE id = ${user.activeOrgId} FOR UPDATE`
+
     // Check plan member limit
     const limitCheck = await checkFeatureLimit(user.activeOrgId, 'members', tx)
     if (!limitCheck.allowed) {
@@ -320,7 +323,7 @@ export async function acceptInviteAction(token: string) {
 
   const clientIp = await getClientIp()
   if (clientIp) {
-    const acceptLimit = checkRateLimit(`invite-accept:${clientIp}`, 10, 60 * 60 * 1000)
+    const acceptLimit = await checkRateLimit(`invite-accept:${clientIp}`, 10, 60 * 60 * 1000)
     if (!acceptLimit.allowed) {
       return {
         error: `Too many invitation attempts. Please try again in ${acceptLimit.resetInSeconds} seconds.`,

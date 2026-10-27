@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const user = await requireAuthUser()
     assertPermission(user.role, 'data:export')
 
-    const exportRate = checkRateLimit(`export:${user.id}`, 20, 5 * 60 * 1000)
+    const exportRate = await checkRateLimit(`export:${user.id}`, 20, 5 * 60 * 1000)
     if (!exportRate.allowed) {
       return NextResponse.json(
         { error: 'Too many export requests. Please try again shortly.' },

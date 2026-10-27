@@ -56,14 +56,14 @@ export async function loginAction(formData: FormData) {
   // Rate limiting per IP + email and per IP (only when client IP can be verified,
   // preventing unknown / unproxied clients from sharing a global rate-limit bucket).
   if (clientIp) {
-    const perIdentity = checkRateLimit(`login:${clientIp}:${normalizedEmail}`, 5, 15 * 60 * 1000)
+    const perIdentity = await checkRateLimit(`login:${clientIp}:${normalizedEmail}`, 5, 15 * 60 * 1000)
     if (!perIdentity.allowed) {
       return {
         error: `Too many login attempts. Please try again in ${perIdentity.resetInSeconds} seconds.`,
       }
     }
 
-    const perIp = checkRateLimit(`login-ip:${clientIp}`, 30, 15 * 60 * 1000)
+    const perIp = await checkRateLimit(`login-ip:${clientIp}`, 30, 15 * 60 * 1000)
     if (!perIp.allowed) {
       return {
         error: `Too many login attempts. Please try again in ${perIp.resetInSeconds} seconds.`,
@@ -110,7 +110,7 @@ export async function loginAction(formData: FormData) {
   // The per-IP counter intentionally survives: a valid login must not reset
   // the credential-stuffing budget shared across emails.
   if (clientIp) {
-    resetRateLimit(`login:${clientIp}:${normalizedEmail}`)
+    await resetRateLimit(`login:${clientIp}:${normalizedEmail}`)
   }
 
   if (user.memberships.length === 0) {
@@ -148,7 +148,7 @@ export async function signupAction(formData: FormData) {
 
   const clientIp = await getClientIp()
   if (clientIp) {
-    const signupLimit = checkRateLimit(`signup:${clientIp}`, 5, 60 * 60 * 1000)
+    const signupLimit = await checkRateLimit(`signup:${clientIp}`, 5, 60 * 60 * 1000)
     if (!signupLimit.allowed) {
       return {
         error: `Too many signup attempts. Please try again in ${signupLimit.resetInSeconds} seconds.`,
@@ -330,6 +330,9 @@ export async function createWorkspaceAction(formData: FormData) {
   })
 
   const result = await prisma.$transaction(async (tx) => {
+    // Lock the organization row to serialize concurrent quota checks
+    await tx.$queryRaw`SELECT 1 FROM "Organization" WHERE id = ${user.activeOrgId} FOR UPDATE`
+
     const limitCheck = await checkFeatureLimit(user.activeOrgId, 'workspaces', tx)
     if (!limitCheck.allowed) {
       return { error: limitCheck.message }
@@ -451,7 +454,7 @@ export async function requestPasswordResetAction(formData: FormData) {
 
   // Rate limiting per-IP (max 10 requests / hr) and per-email (max 3 requests / hr)
   if (clientIp) {
-    const ipLimit = checkRateLimit(`forgot-ip:${clientIp}`, 10, 60 * 60 * 1000)
+    const ipLimit = await checkRateLimit(`forgot-ip:${clientIp}`, 10, 60 * 60 * 1000)
     if (!ipLimit.allowed) {
       return {
         error: `Too many password reset requests. Please try again in ${ipLimit.resetInSeconds} seconds.`,
@@ -459,7 +462,7 @@ export async function requestPasswordResetAction(formData: FormData) {
     }
   }
 
-  const emailLimit = checkRateLimit(`forgot-email:${normalizedEmail}`, 3, 60 * 60 * 1000)
+  const emailLimit = await checkRateLimit(`forgot-email:${normalizedEmail}`, 3, 60 * 60 * 1000)
   if (!emailLimit.allowed) {
     return {
       error: `Too many password reset requests for this email. Please try again in ${emailLimit.resetInSeconds} seconds.`,
@@ -683,7 +686,7 @@ export async function resendVerificationEmailAction(formData: FormData) {
   const rateLimitKey = clientIp
     ? `resend-verify:${clientIp}:${normalizedEmail}`
     : `resend-verify:${normalizedEmail}`
-  const rate = checkRateLimit(rateLimitKey, 3, 60 * 60 * 1000)
+  const rate = await checkRateLimit(rateLimitKey, 3, 60 * 60 * 1000)
   if (!rate.allowed) {
     return {
       error: `Too many verification requests. Please try again in ${rate.resetInSeconds} seconds.`,

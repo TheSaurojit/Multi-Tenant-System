@@ -1,39 +1,97 @@
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
+
 interface RateLimitRecord {
   attempts: number
   resetTime: number
 }
 
-/**
- * In-memory rate limit store.
- * NOTE: In multi-instance or serverless container environments (e.g. AWS ECS with multiple tasks,
- * Kubernetes replicas, or Vercel Serverless Functions), each process maintains its own in-memory Map.
- * For distributed horizontal scaling across multiple instances, swap or back this store with
- * a centralized Redis / Upstash Redis client (@upstash/ratelimit) using UPSTASH_REDIS_REST_URL.
- */
-const rateLimitStore = new Map<string, RateLimitRecord>()
+export interface RateLimitResult {
+  allowed: boolean
+  remaining: number
+  resetInSeconds: number
+}
 
-// Clean up expired records every 10 minutes to prevent memory leak
+// In-memory fallback store for local development, test environments, or when Upstash is unconfigured
+const inMemoryStore = new Map<string, RateLimitRecord>()
+
+// Periodically clean up expired records in memory
 if (typeof setInterval !== 'undefined') {
   setInterval(() => {
     const now = Date.now()
-    for (const [key, record] of rateLimitStore.entries()) {
+    for (const [key, record] of inMemoryStore.entries()) {
       if (now > record.resetTime) {
-        rateLimitStore.delete(key)
+        inMemoryStore.delete(key)
       }
     }
   }, 10 * 60 * 1000).unref?.()
 }
 
-export function checkRateLimit(
+// Initialize Upstash Redis client if credentials are configured
+const upstashUrl = process.env.UPSTASH_REDIS_REST_URL
+const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
+
+export const isUpstashConfigured = Boolean(upstashUrl && upstashToken)
+
+const redisClient: Redis | null = isUpstashConfigured
+  ? new Redis({
+      url: upstashUrl!,
+      token: upstashToken!,
+    })
+  : null
+
+const upstashLimiters = new Map<string, Ratelimit>()
+
+function getUpstashLimiter(redis: Redis, maxAttempts: number, windowMs: number): Ratelimit {
+  const cacheKey = `${maxAttempts}:${windowMs}`
+  let limiter = upstashLimiters.get(cacheKey)
+  if (!limiter) {
+    limiter = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(maxAttempts, `${windowMs} ms`),
+      prefix: 'saas_rl',
+    })
+    upstashLimiters.set(cacheKey, limiter)
+  }
+  return limiter
+}
+
+/**
+ * Distributed rate limiter.
+ * Backed by Upstash Redis (@upstash/ratelimit) when UPSTASH_REDIS_REST_URL and
+ * UPSTASH_REDIS_REST_TOKEN environment variables are set. This prevents rate-limit
+ * bypasses across multiple Vercel serverless function instances and cold starts.
+ *
+ * Falls back to an in-memory sliding window store in local dev / test suites.
+ */
+export async function checkRateLimit(
   identifier: string,
   maxAttempts: number = 5,
   windowMs: number = 15 * 60 * 1000 // 15 minutes window
-): { allowed: boolean; remaining: number; resetInSeconds: number } {
+): Promise<RateLimitResult> {
+  if (redisClient) {
+    try {
+      const limiter = getUpstashLimiter(redisClient, maxAttempts, windowMs)
+      const res = await limiter.limit(identifier)
+      const now = Date.now()
+      const resetInSeconds = Math.max(0, Math.ceil((res.reset - now) / 1000))
+
+      return {
+        allowed: res.success,
+        remaining: res.remaining,
+        resetInSeconds,
+      }
+    } catch (err) {
+      console.error('[RateLimit:Upstash] Failed to check rate limit with Upstash, falling back to in-memory store:', err)
+    }
+  }
+
+  // In-memory sliding window fallback
   const now = Date.now()
-  const record = rateLimitStore.get(identifier)
+  const record = inMemoryStore.get(identifier)
 
   if (!record || now > record.resetTime) {
-    rateLimitStore.set(identifier, {
+    inMemoryStore.set(identifier, {
       attempts: 1,
       resetTime: now + windowMs,
     })
@@ -60,6 +118,20 @@ export function checkRateLimit(
   }
 }
 
-export function resetRateLimit(identifier: string): void {
-  rateLimitStore.delete(identifier)
+export async function resetRateLimit(identifier: string): Promise<void> {
+  inMemoryStore.delete(identifier)
+
+  if (redisClient) {
+    try {
+      for (const limiter of upstashLimiters.values()) {
+        await limiter.resetUsedTokens(identifier)
+      }
+      const keys = await redisClient.keys(`saas_rl:*${identifier}*`)
+      if (keys.length > 0) {
+        await redisClient.del(...keys)
+      }
+    } catch (err) {
+      console.error('[RateLimit:Upstash] Failed to reset rate limit tokens in Upstash:', err)
+    }
+  }
 }

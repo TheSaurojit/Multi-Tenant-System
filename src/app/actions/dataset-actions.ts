@@ -54,6 +54,9 @@ export async function uploadCsvAction(formData: FormData) {
 
   // Atomically check quota limit and create dataset record with PROCESSING status
   const datasetResult = await prisma.$transaction(async (tx) => {
+    // Lock the organization row to serialize concurrent quota checks
+    await tx.$queryRaw`SELECT 1 FROM "Organization" WHERE id = ${user.activeOrgId} FOR UPDATE`
+
     const uploadLimit = await checkFeatureLimit(user.activeOrgId, 'uploads', tx)
     if (!uploadLimit.allowed) {
       return { error: uploadLimit.message }

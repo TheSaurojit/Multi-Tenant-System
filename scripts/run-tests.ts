@@ -131,26 +131,26 @@ async function runTestSuite() {
   console.log('\n--- Suite 4: Sliding-Window Rate Limiting ---')
   {
     const id = 'test-ip-user-123'
-    resetRateLimit(id)
+    await resetRateLimit(id)
 
     // First 5 attempts should succeed
     for (let i = 1; i <= 5; i++) {
-      const res = checkRateLimit(id, 5, 10000)
+      const res = await checkRateLimit(id, 5, 10000)
       assert(res.allowed, `Attempt ${i} is allowed`)
       assert(res.remaining === 5 - i, `Remaining count is ${5 - i}`)
     }
 
     // 6th attempt should be blocked
-    const blockedRes = checkRateLimit(id, 5, 10000)
+    const blockedRes = await checkRateLimit(id, 5, 10000)
     assert(!blockedRes.allowed, 'Attempt 6 is blocked')
     assert(blockedRes.remaining === 0, 'Remaining is 0 when blocked')
     assert(blockedRes.resetInSeconds > 0, 'Reset seconds is positive')
 
     // Reset works
-    resetRateLimit(id)
-    const afterReset = checkRateLimit(id, 5, 10000)
+    await resetRateLimit(id)
+    const afterReset = await checkRateLimit(id, 5, 10000)
     assert(afterReset.allowed, 'Attempt after explicit reset is allowed')
-    resetRateLimit(id)
+    await resetRateLimit(id)
 
     // IP Sanitization and Header Parsing
     assert(sanitizeIp('192.168.1.1') === '192.168.1.1', 'Valid IPv4 address parses correctly')
@@ -171,7 +171,7 @@ async function runTestSuite() {
     // Simulating attacker failed login attempts when IP is null
     let attackerLocked = false
     if (attackerIp) {
-      const res = checkRateLimit(`login:${attackerIp}:${targetEmail}`, 5, 10000)
+      const res = await checkRateLimit(`login:${attackerIp}:${targetEmail}`, 5, 10000)
       if (!res.allowed) attackerLocked = true
     }
     assert(!attackerLocked, 'Attacker with null IP does not lock out target email')
@@ -179,7 +179,7 @@ async function runTestSuite() {
     // Legitimate user attempt proceeds unaffected
     let legitimateAllowed = true
     if (legitimateIp) {
-      const res = checkRateLimit(`login:${legitimateIp}:${targetEmail}`, 5, 10000)
+      const res = await checkRateLimit(`login:${legitimateIp}:${targetEmail}`, 5, 10000)
       if (!res.allowed) legitimateAllowed = false
     }
     assert(legitimateAllowed, 'Legitimate user with null IP is not locked out by attacker attempts')
@@ -480,6 +480,10 @@ async function runTestSuite() {
     assert(
       resolveAuthRedirect('\\\\attacker.com') === '/dashboard',
       'Neutralizes Windows backslash UNC path'
+    )
+    assert(
+      resolveAuthRedirect('/\t/example.com') === '/dashboard',
+      'Neutralizes tab character protocol-relative evasion'
     )
 
     // Circular auth loops

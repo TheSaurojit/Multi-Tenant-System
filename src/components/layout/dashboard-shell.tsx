@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { CurrentUser } from '@/lib/auth'
 import { hasPermission } from '@/lib/permissions'
 import { Sidebar } from '@/components/layout/sidebar'
@@ -20,6 +20,9 @@ export function DashboardShell({
   children,
 }: DashboardShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const handleCloseMobileSidebar = useCallback(() => {
+    setMobileSidebarOpen(false)
+  }, [])
 
   return (
     <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 antialiased">
@@ -27,7 +30,7 @@ export function DashboardShell({
       <Sidebar
         currentUser={currentUser}
         mobileOpen={mobileSidebarOpen}
-        onClose={() => setMobileSidebarOpen(false)}
+        onClose={handleCloseMobileSidebar}
       />
 
       {/* Main Content Area */}

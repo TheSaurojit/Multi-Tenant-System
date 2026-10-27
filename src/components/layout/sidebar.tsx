@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -79,12 +79,15 @@ export function Sidebar({
     },
   ]
 
+  const prevPathnameRef = useRef(pathname)
+
   // Automatically close mobile sidebar on route change
   useEffect(() => {
-    if (mobileOpen) {
+    if (prevPathnameRef.current !== pathname) {
+      prevPathnameRef.current = pathname
       onClose?.()
     }
-  }, [pathname, mobileOpen, onClose])
+  }, [pathname, onClose])
 
   // Close mobile sidebar on Escape key
   useEffect(() => {

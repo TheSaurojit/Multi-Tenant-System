@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { verifyEmailAction, resendVerificationEmailAction } from '@/app/actions/auth-actions'
 import { Button } from '@/components/ui/button'
 import { Mail, CheckCircle2, AlertCircle, ArrowLeft, RefreshCw, Sparkles } from 'lucide-react'
+import { resolveAuthRedirect } from '@/lib/auth-redirect'
 
 function VerifyEmailContent() {
   const router = useRouter()
@@ -108,7 +109,7 @@ function VerifyEmailContent() {
             size="lg"
             className="w-full"
             onClick={() => {
-              const target = from && from.startsWith('/') && !from.startsWith('//') ? from : '/dashboard'
+              const target = resolveAuthRedirect(from, '/dashboard')
               router.push(target)
             }}
           >
