@@ -19,7 +19,7 @@ export default async function DashboardPage({
 
   const resolvedParams = await searchParams
   const datasetId = typeof resolvedParams.datasetId === 'string' ? resolvedParams.datasetId : undefined
-  const range = typeof resolvedParams.range === 'string' ? resolvedParams.range : 'last90'
+  const range = typeof resolvedParams.range === 'string' && resolvedParams.range ? resolvedParams.range : 'last30'
   const category = typeof resolvedParams.category === 'string' && resolvedParams.category !== 'all' ? [resolvedParams.category] : undefined
   const customStartDateStr = typeof resolvedParams.startDate === 'string' ? resolvedParams.startDate : undefined
   const customEndDateStr = typeof resolvedParams.endDate === 'string' ? resolvedParams.endDate : undefined
@@ -31,55 +31,12 @@ export default async function DashboardPage({
     endDate: customEndDateStr,
   })
 
-  const analytics = await getWorkspaceAnalytics({
-    organizationId: currentUser.activeOrgId,
-    workspaceId: currentUser.activeWorkspaceId,
-    datasetId,
-    startDate,
-    endDate,
-    categories: category,
-  })
+  // Get active org plan limits from currentUser membership
+  const currentMembership = currentUser.memberships.find((m) => m.orgId === currentUser.activeOrgId)
+  const plan = currentMembership?.plan || 'FREE'
+  const planLimits = getPlanLimits(plan)
+  const retentionCutoff = getRetentionCutoff(plan)
 
-  // Check if workspace has any datasets
-  const datasetCount = await prisma.dataset.count({
-    where: {
-      organizationId: currentUser.activeOrgId,
-      workspaceId: currentUser.activeWorkspaceId,
-    },
-  })
-
-  if (datasetCount === 0) {
-    return (
-      <div className="py-12">
-        <EmptyState
-          icon={BarChart3}
-          title="No Analytics Data in this Workspace"
-          description={`Upload your first sales or marketing CSV dataset to '${currentUser.activeWorkspaceName}' in ${currentUser.activeOrgName} to visualize trends, compute unit economics, and generate team reports.`}
-          actionLabel="Upload First CSV Dataset"
-          href="/datasets?upload=true"
-        />
-      </div>
-    )
-  }
-
-  // Fetch saved reports for this workspace
-  const savedReports = await prisma.savedReport.findMany({
-    where: {
-      organizationId: currentUser.activeOrgId,
-      workspaceId: currentUser.activeWorkspaceId,
-    },
-    orderBy: { updatedAt: 'desc' },
-  })
-
-  // Fetch active org plan limits
-  const org = await prisma.organization.findUnique({
-    where: { id: currentUser.activeOrgId },
-    select: { plan: true },
-  })
-  const planLimits = getPlanLimits(org?.plan || 'FREE')
-
-  // Fetch recent data points for current filter
-  const retentionCutoff = getRetentionCutoff(org?.plan || 'FREE')
   let effectiveRecentStart = startDate
   if (!effectiveRecentStart || effectiveRecentStart < retentionCutoff) {
     effectiveRecentStart = retentionCutoff
@@ -97,11 +54,60 @@ export default async function DashboardPage({
   if (datasetId && datasetId !== 'all') recentWhere.datasetId = datasetId
   if (category) recentWhere.category = { in: category }
 
-  const recentPoints = await prisma.dataPoint.findMany({
-    where: recentWhere,
-    orderBy: { date: 'desc' },
-    take: 50,
-  })
+  // Execute analytics, saved reports, and recent points concurrently
+  const [analytics, savedReports, recentPoints] = await Promise.all([
+    getWorkspaceAnalytics({
+      organizationId: currentUser.activeOrgId,
+      workspaceId: currentUser.activeWorkspaceId,
+      datasetId,
+      startDate,
+      endDate,
+      categories: category,
+    }),
+    prisma.savedReport.findMany({
+      where: {
+        organizationId: currentUser.activeOrgId,
+        workspaceId: currentUser.activeWorkspaceId,
+      },
+      orderBy: { updatedAt: 'desc' },
+    }),
+    prisma.dataPoint.findMany({
+      where: recentWhere,
+      select: {
+        id: true,
+        datasetId: true,
+        organizationId: true,
+        workspaceId: true,
+        date: true,
+        category: true,
+        subCategory: true,
+        metric1: true,
+        metric2: true,
+        metric3: true,
+        region: true,
+        channel: true,
+        metadata: true,
+        createdAt: true,
+      },
+      orderBy: { date: 'desc' },
+      take: 15,
+    }),
+  ])
+
+  // Check if workspace has any datasets
+  if (analytics.datasets.length === 0) {
+    return (
+      <div className="py-12">
+        <EmptyState
+          icon={BarChart3}
+          title="No Analytics Data in this Workspace"
+          description={`Upload your first sales or marketing CSV dataset to '${currentUser.activeWorkspaceName}' in ${currentUser.activeOrgName} to visualize trends, compute unit economics, and generate team reports.`}
+          actionLabel="Upload First CSV Dataset"
+          href="/datasets?upload=true"
+        />
+      </div>
+    )
+  }
 
   // Serialize Prisma Decimal objects to plain numbers for RSC boundary
   const serializedRecentPoints = recentPoints.map((p) => ({

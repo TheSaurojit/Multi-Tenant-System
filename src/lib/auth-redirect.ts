@@ -15,7 +15,15 @@ export function resolveAuthRedirect(rawFrom: unknown, fallback: string = '/dashb
       !u.pathname.startsWith('/login') &&
       !u.pathname.startsWith('/signup')
     ) {
-      return u.pathname + u.search
+      const result = u.pathname + u.search
+      // URL normalises dot-segments (%2e, ., ..) before we ever see u.pathname.
+      // A crafted input like /.//example.com or /x/..//example.com normalises to
+      // //example.com — a valid protocol-relative URL the browser treats as external.
+      // Reject anything whose normalised output still starts with // or /\.
+      if (result.startsWith('//') || result.startsWith('/\\')) {
+        return fallback
+      }
+      return result
     }
   } catch {
     return fallback

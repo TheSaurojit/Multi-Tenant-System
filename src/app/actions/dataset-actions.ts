@@ -113,12 +113,73 @@ export async function uploadCsvAction(formData: FormData) {
       })
     }
 
-    // Mark completed
+    // Extract unique categories and compute pre-aggregated daily rollups
+    const uniqueCategories = Array.from(
+      new Set(points.map((p) => p.category.trim()).filter(Boolean))
+    ).sort()
+
+    const rollupMap = new Map<
+      string,
+      {
+        date: Date
+        category: string
+        metric1: number
+        metric2: number
+        metric3: number
+        recordCount: number
+      }
+    >()
+
+    for (const p of points) {
+      const d = new Date(p.date)
+      d.setUTCHours(0, 0, 0, 0)
+      const key = `${d.toISOString().split('T')[0]}:${p.category}`
+      const existing = rollupMap.get(key)
+      const m1 = Number(p.metric1) || 0
+      const m2 = Number(p.metric2) || 0
+      const m3 = Number(p.metric3) || 0
+
+      if (existing) {
+        existing.metric1 += m1
+        existing.metric2 += m2
+        existing.metric3 += m3
+        existing.recordCount += 1
+      } else {
+        rollupMap.set(key, {
+          date: d,
+          category: p.category,
+          metric1: m1,
+          metric2: m2,
+          metric3: m3,
+          recordCount: 1,
+        })
+      }
+    }
+
+    const rollups = Array.from(rollupMap.values())
+    if (rollups.length > 0) {
+      await prisma.dailyRollup.createMany({
+        data: rollups.map((r) => ({
+          datasetId: dataset.id,
+          organizationId: user.activeOrgId,
+          workspaceId: user.activeWorkspaceId,
+          date: r.date,
+          category: r.category,
+          metric1: r.metric1,
+          metric2: r.metric2,
+          metric3: r.metric3,
+          recordCount: r.recordCount,
+        })),
+      })
+    }
+
+    // Mark completed with categories array
     await prisma.dataset.update({
       where: { id: dataset.id },
       data: {
         status: 'COMPLETED',
         rowCount: points.length,
+        categories: uniqueCategories,
       },
     })
 
@@ -150,6 +211,9 @@ export async function uploadCsvAction(formData: FormData) {
     console.error('Ingestion failed:', err)
     // Atomic ingestion guarantee: clean up partial orphan data points so dataset never leaves corrupted data
     try {
+      await prisma.dailyRollup.deleteMany({
+        where: { datasetId: dataset.id },
+      })
       await prisma.dataPoint.deleteMany({
         where: { datasetId: dataset.id },
       })

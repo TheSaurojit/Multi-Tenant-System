@@ -51,7 +51,7 @@ export function DashboardShell({
 
             {/* Breadcrumb Hierarchy */}
             <div className="flex items-center gap-1.5 sm:gap-2 truncate">
-              <span className="text-[11px] font-medium text-zinc-400 hidden sm:inline">
+              <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 hidden sm:inline">
                 Org:
               </span>
               <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
@@ -69,7 +69,7 @@ export function DashboardShell({
                 {currentPlan}
               </Badge>
               <span className="text-zinc-300 dark:text-zinc-700 hidden xs:inline">/</span>
-              <span className="text-[11px] font-medium text-zinc-400 hidden sm:inline">
+              <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 hidden sm:inline">
                 Workspace:
               </span>
               <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-md border border-indigo-200/50 dark:border-indigo-900/50 truncate">

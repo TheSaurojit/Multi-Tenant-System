@@ -11,7 +11,13 @@
  */
 
 import { parseRobustNumber, parseRobustDate, parseAndValidateCsv } from '../src/lib/csv-parser'
-import { checkRateLimit, resetRateLimit } from '../src/lib/rate-limit'
+import {
+  checkRateLimit,
+  resetRateLimit,
+  _setRedisClientForTesting,
+  _setUpstashLimiterForTesting,
+  _clearUpstashLimitersForTesting,
+} from '../src/lib/rate-limit'
 import { sanitizeIp } from '../src/lib/request-ip'
 import { slugify, generateUniqueSlug } from '../src/lib/slug'
 import { hasPermission, assertPermission } from '../src/lib/permissions'
@@ -183,6 +189,76 @@ async function runTestSuite() {
       if (!res.allowed) legitimateAllowed = false
     }
     assert(legitimateAllowed, 'Legitimate user with null IP is not locked out by attacker attempts')
+
+    // Upstash Failure & Fail-Closed Behavior (Issue 2 & 3)
+    let alertLogged = false
+    let metricLogged = false
+    const originalError = console.error
+    const originalWarn = console.warn
+    console.error = (...args: any[]) => {
+      const str = args.join(' ')
+      if (str.includes('[ALERT:RATE_LIMIT_DEGRADED]')) alertLogged = true
+      if (str.includes('[METRIC:ratelimit.upstash_error]')) metricLogged = true
+      if (str.includes('[ALERT:RATE_LIMIT_FAIL_CLOSED]')) alertLogged = true
+    }
+    console.warn = () => {}
+
+    try {
+      const errorLimiter = {
+        limit: async () => {
+          throw new Error('Upstash connection timeout')
+        },
+        resetUsedTokens: async () => {},
+      } as any
+
+      _setRedisClientForTesting({} as any)
+      _setUpstashLimiterForTesting('5:10000', errorLimiter)
+
+      // 1. Login fails closed on Upstash error
+      alertLogged = false
+      metricLogged = false
+      const loginRes = await checkRateLimit('login:1.2.3.4:victim@example.com', 5, 10000)
+      assert(!loginRes.allowed, 'Login fails closed (allowed: false) when Upstash errors')
+      assert(loginRes.remaining === 0, 'Login remaining is 0 when failing closed')
+      assert(alertLogged, 'Upstash error logs an alert')
+      assert(metricLogged, 'Upstash error logs a metric')
+
+      // 2. Non-login falls back to in-memory store
+      const fallbackRes = await checkRateLimit('export:user-123', 5, 10000)
+      assert(fallbackRes.allowed, 'Non-login falls back to in-memory store when Upstash errors')
+
+      // 3. Explicit failClosed: true fails closed
+      const explicitFailClosed = await checkRateLimit('export:user-456', 5, 10000, { failClosed: true })
+      assert(!explicitFailClosed.allowed, 'Explicit failClosed: true blocks request on Upstash error')
+
+      // 4. resetRateLimit calls resetUsedTokens and does not call redis.keys (no O(N) blocking KEYS scan)
+      let resetUsedTokensCalled = false
+      let keysCalled = false
+      const mockLimiter = {
+        resetUsedTokens: async () => {
+          resetUsedTokensCalled = true
+        },
+      } as any
+      const mockRedis = {
+        keys: async () => {
+          keysCalled = true
+          return []
+        },
+        del: async () => {},
+      } as any
+      _setRedisClientForTesting(mockRedis)
+      _clearUpstashLimitersForTesting()
+      _setUpstashLimiterForTesting('mock', mockLimiter)
+
+      await resetRateLimit('test-id')
+      assert(resetUsedTokensCalled, 'resetRateLimit calls resetUsedTokens on limiters')
+      assert(!keysCalled, 'resetRateLimit does not call redis.keys (no O(N) blocking scan)')
+    } finally {
+      console.error = originalError
+      console.warn = originalWarn
+      _setRedisClientForTesting(null)
+      _clearUpstashLimitersForTesting()
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -484,6 +560,25 @@ async function runTestSuite() {
     assert(
       resolveAuthRedirect('/\t/example.com') === '/dashboard',
       'Neutralizes tab character protocol-relative evasion'
+    )
+
+    // Dot-segment normalisation bypass vectors (URL constructor resolves . and .. before
+    // we inspect u.pathname, so the post-normalisation guard must catch these)
+    assert(
+      resolveAuthRedirect('/.//example.com') === '/dashboard',
+      'Neutralizes dot-slash protocol-relative bypass (/.//example.com)'
+    )
+    assert(
+      resolveAuthRedirect('/x/..//example.com') === '/dashboard',
+      'Neutralizes parent-traversal protocol-relative bypass (/x/..//example.com)'
+    )
+    assert(
+      resolveAuthRedirect('/%2e//example.com') === '/dashboard',
+      'Neutralizes percent-encoded dot bypass (/%2e//example.com)'
+    )
+    assert(
+      resolveAuthRedirect('/./\\[example.com') === '/dashboard',
+      'Neutralizes dot-slash backslash bypass (/./\\[example.com -> ///[example.com)'
     )
 
     // Circular auth loops

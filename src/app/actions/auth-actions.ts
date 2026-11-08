@@ -56,14 +56,16 @@ export async function loginAction(formData: FormData) {
   // Rate limiting per IP + email and per IP (only when client IP can be verified,
   // preventing unknown / unproxied clients from sharing a global rate-limit bucket).
   if (clientIp) {
-    const perIdentity = await checkRateLimit(`login:${clientIp}:${normalizedEmail}`, 5, 15 * 60 * 1000)
+    const perIdentity = await checkRateLimit(`login:${clientIp}:${normalizedEmail}`, 5, 15 * 60 * 1000, {
+      failClosed: true,
+    })
     if (!perIdentity.allowed) {
       return {
         error: `Too many login attempts. Please try again in ${perIdentity.resetInSeconds} seconds.`,
       }
     }
 
-    const perIp = await checkRateLimit(`login-ip:${clientIp}`, 30, 15 * 60 * 1000)
+    const perIp = await checkRateLimit(`login-ip:${clientIp}`, 30, 15 * 60 * 1000, { failClosed: true })
     if (!perIp.allowed) {
       return {
         error: `Too many login attempts. Please try again in ${perIp.resetInSeconds} seconds.`,

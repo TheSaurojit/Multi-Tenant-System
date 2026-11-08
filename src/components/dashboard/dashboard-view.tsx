@@ -12,7 +12,7 @@ import {
   ArrowUpRight,
   Database,
 } from 'lucide-react'
-import { DashboardCharts } from './dashboard-charts'
+import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { CurrentUser } from '@/lib/auth'
@@ -26,6 +26,35 @@ import {
   DatasetItem,
   RetentionInfo,
 } from '@/lib/analytics-engine'
+
+const DashboardCharts = dynamic(
+  () => import('./dashboard-charts').then((mod) => mod.DashboardCharts),
+  {
+    loading: () => (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-pulse" aria-busy="true" aria-label="Loading analytics charts">
+        <div className="lg:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 h-96 flex flex-col justify-between shadow-xs">
+          <div className="space-y-2">
+            <div className="h-4 w-44 bg-zinc-200 dark:bg-zinc-800 rounded" />
+            <div className="h-3 w-64 bg-zinc-100 dark:bg-zinc-800/60 rounded" />
+          </div>
+          <div className="h-64 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg flex items-center justify-center">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">Loading performance trend chart...</span>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 h-96 flex flex-col justify-between shadow-xs">
+          <div className="space-y-2">
+            <div className="h-4 w-36 bg-zinc-200 dark:bg-zinc-800 rounded" />
+            <div className="h-3 w-48 bg-zinc-100 dark:bg-zinc-800/60 rounded" />
+          </div>
+          <div className="h-64 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg flex items-center justify-center">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">Loading breakdown chart...</span>
+          </div>
+        </div>
+      </div>
+    ),
+    ssr: false,
+  }
+)
 
 export interface SavedReportItem {
   id: string
@@ -89,7 +118,7 @@ export function DashboardView({
   const searchParams = useSearchParams()
 
   const currentDatasetId = searchParams.get('datasetId') || 'all'
-  const currentDateRange = searchParams.get('range') || 'last90'
+  const currentDateRange = searchParams.get('range') || 'last30'
   const currentCategory = searchParams.get('category') || 'all'
   const currentStartDate = searchParams.get('startDate') || ''
   const currentEndDate = searchParams.get('endDate') || ''
@@ -189,9 +218,10 @@ export function DashboardView({
           <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-800/80 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs">
             <Database className="w-3.5 h-3.5 text-zinc-500" />
             <select
+              aria-label="Filter by dataset"
               value={currentDatasetId}
               onChange={(e) => updateFilters('datasetId', e.target.value)}
-              className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+              className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
             >
               <option value="all">All Workspace Datasets ({datasets.length})</option>
               {datasets.map((d) => (
@@ -206,9 +236,10 @@ export function DashboardView({
           <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-800/80 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs">
             <Calendar className="w-3.5 h-3.5 text-zinc-500" />
             <select
+              aria-label="Filter by date range"
               value={currentDateRange}
               onChange={(e) => updateFilters('range', e.target.value)}
-              className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+              className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
             >
               <option value="last7">Last 7 Days</option>
               <option value="last30">Last 30 Days</option>
@@ -226,18 +257,20 @@ export function DashboardView({
                 <span className="text-zinc-500 font-medium">From:</span>
                 <input
                   type="date"
+                  aria-label="Start date"
                   value={currentStartDate}
                   onChange={(e) => updateFilters('startDate', e.target.value)}
-                  className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
+                  className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
                 />
               </div>
               <div className="flex items-center gap-1 bg-zinc-50 dark:bg-zinc-800/80 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs">
                 <span className="text-zinc-500 font-medium">To:</span>
                 <input
                   type="date"
+                  aria-label="End date"
                   value={currentEndDate}
                   onChange={(e) => updateFilters('endDate', e.target.value)}
-                  className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
+                  className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
                 />
               </div>
             </div>
@@ -248,9 +281,10 @@ export function DashboardView({
             <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-800/80 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs">
               <Filter className="w-3.5 h-3.5 text-zinc-500" />
               <select
+                aria-label="Filter by category"
                 value={currentCategory}
                 onChange={(e) => updateFilters('category', e.target.value)}
-                className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+                className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
               >
                 <option value="all">All Categories</option>
                 {availableCategories.map((c) => (
@@ -267,6 +301,7 @@ export function DashboardView({
             <div className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-900/60 text-xs text-indigo-700 dark:text-indigo-300">
               <span className="font-semibold">Report:</span>
               <select
+                aria-label="Load saved report"
                 onChange={(e) => {
                   const r = savedReports.find((rep) => rep.id === e.target.value)
                   if (r && r.filters && typeof r.filters === 'object') {
@@ -281,7 +316,7 @@ export function DashboardView({
                   }
                 }}
                 defaultValue=""
-                className="bg-transparent border-0 text-indigo-900 dark:text-indigo-200 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+                className="bg-zinc-900 border-0 text-indigo-900 dark:text-indigo-200 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
               >
                 <option value="" disabled>
                   Load Saved Report...
@@ -366,13 +401,13 @@ export function DashboardView({
                 {kpis.primaryChange >= 0 ? `+${kpis.primaryChange}%` : `${kpis.primaryChange}%`}
               </span>
             ) : (
-              <span className="text-zinc-400 text-xs font-mono">—</span>
+              <span className="text-zinc-500 dark:text-zinc-400 text-xs font-mono">—</span>
             )}
           </div>
           <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
             ₹{kpis.primaryTotal.toLocaleString('en-IN')}
           </div>
-          <p className="mt-1 text-[11px] text-zinc-400">vs. previous period</p>
+          <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">vs. previous period</p>
         </div>
 
         {/* Card 2: Secondary Metric */}
@@ -397,7 +432,7 @@ export function DashboardView({
                 {kpis.secondaryChange >= 0 ? `+${kpis.secondaryChange}%` : `${kpis.secondaryChange}%`}
               </span>
             ) : (
-              <span className="text-zinc-400 text-xs font-mono">—</span>
+              <span className="text-zinc-500 dark:text-zinc-400 text-xs font-mono">—</span>
             )}
           </div>
           <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
@@ -405,7 +440,7 @@ export function DashboardView({
               ? kpis.secondaryTotal.toLocaleString('en-IN')
               : `₹${kpis.secondaryTotal.toLocaleString('en-IN')}`}
           </div>
-          <p className="mt-1 text-[11px] text-zinc-400">operational costs / traffic</p>
+          <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">operational costs / traffic</p>
         </div>
 
         {/* Card 3: Volume Metric */}
@@ -430,13 +465,13 @@ export function DashboardView({
                 {kpis.tertiaryChange >= 0 ? `+${kpis.tertiaryChange}%` : `${kpis.tertiaryChange}%`}
               </span>
             ) : (
-              <span className="text-zinc-400 text-xs font-mono">—</span>
+              <span className="text-zinc-500 dark:text-zinc-400 text-xs font-mono">—</span>
             )}
           </div>
           <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
             {kpis.tertiaryTotal.toLocaleString()}
           </div>
-          <p className="mt-1 text-[11px] text-zinc-400">completed transactions</p>
+          <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">completed transactions</p>
         </div>
 
         {/* Card 4: Efficiency Metric */}
@@ -453,7 +488,7 @@ export function DashboardView({
             {kpis.efficiencyUnit}
             {kpis.efficiencyValue.toLocaleString()}
           </div>
-          <p className="mt-1 text-[11px] text-zinc-400">unit economics metric</p>
+          <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">unit economics metric</p>
         </div>
       </div>
 
@@ -494,7 +529,7 @@ export function DashboardView({
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
               {recentPoints.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-zinc-400">
+                  <td colSpan={7} className="py-8 text-center text-zinc-500 dark:text-zinc-400">
                     No data points found matching criteria.
                   </td>
                 </tr>

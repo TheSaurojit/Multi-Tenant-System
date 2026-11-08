@@ -203,13 +203,14 @@ export function TeamManagementView({
                             <span className="text-[10px] text-indigo-500 font-normal">(You)</span>
                           )}
                         </div>
-                        <div className="text-[11px] text-zinc-400">{m.user.email}</div>
+                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{m.user.email}</div>
                       </div>
                     </td>
 
                     <td className="py-3 px-4">
                       {canUpdateRole && !isSelf && !isOwner && !isPeerAdmin ? (
                         <select
+                          aria-label={`Role for ${m.user.name}`}
                           value={m.role}
                           onChange={(e) => handleRoleChange(m.userId, e.target.value as Role)}
                           className={`px-2 py-1 rounded text-xs font-semibold border ${getRoleBadgeClass(
@@ -239,7 +240,8 @@ export function TeamManagementView({
                       {canRemove && !isSelf && !isOwner && !isPeerAdmin && (
                         <button
                           onClick={() => handleRemoveMember(m.userId)}
-                          className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                          aria-label={`Remove ${m.user.name}`}
+                          className="p-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
                           title="Remove user"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -281,7 +283,7 @@ export function TeamManagementView({
                     className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors"
                   >
                     <td className="py-3 px-4 font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-zinc-400" />
+                      <Mail className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
                       {inv.email}
                     </td>
                     <td className="py-3 px-4">
@@ -317,7 +319,8 @@ export function TeamManagementView({
                           </button>
                           <button
                             onClick={() => handleRevokeInvite(inv.id)}
-                            className="p-1 rounded text-zinc-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            aria-label={`Revoke invite for ${inv.email}`}
+                            className="p-1 rounded text-zinc-500 dark:text-zinc-400 hover:text-rose-600 transition-colors cursor-pointer"
                             title="Revoke Invite"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -349,10 +352,11 @@ export function TeamManagementView({
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+              <label htmlFor="invite-email-input" className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
                 Colleague Work Email
               </label>
               <input
+                id="invite-email-input"
                 type="email"
                 required
                 value={inviteEmail}
@@ -363,13 +367,15 @@ export function TeamManagementView({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+              <label htmlFor="invite-role-select" className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
                 Role Permission Level
               </label>
               <select
+                id="invite-role-select"
+                aria-label="Role Permission Level"
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value as Role)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
               >
                 {currentUser.role === 'OWNER' && (
                   <option value="ADMIN">Admin - Full team & dataset management</option>
@@ -400,11 +406,12 @@ export function TeamManagementView({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+              <label htmlFor="invite-direct-url" className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
                 Direct Invitation Link
               </label>
               <div className="flex items-center gap-2">
                 <input
+                  id="invite-direct-url"
                   type="text"
                   readOnly
                   value={generatedInviteUrl}
@@ -419,7 +426,7 @@ export function TeamManagementView({
                   {copiedUrl ? 'Copied' : 'Copy'}
                 </Button>
               </div>
-              <p className="text-[11px] text-zinc-400 mt-1">
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
                 Send this link directly to your colleague or test it in an incognito window.
               </p>
             </div>

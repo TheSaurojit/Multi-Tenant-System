@@ -138,12 +138,16 @@ export default async function AuditLogsPage({
 
           {/* Filter Dropdown */}
           <form method="GET" className="flex items-center gap-2">
-            <label className="text-xs font-medium text-zinc-500">Filter Event:</label>
+            <label htmlFor="audit-filter-action" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Filter Event:
+            </label>
             <select
+              id="audit-filter-action"
               name="action"
+              aria-label="Filter Audit Events"
               defaultValue={actionFilter || 'all'}
               // Using standard GET submission for server filter
-              className="px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 font-medium focus:ring-2 focus:ring-indigo-500"
+              className="px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 font-medium focus:ring-2 focus:ring-indigo-500 cursor-pointer"
             >
               <option value="all">All Audit Events</option>
               <option value="USER_INVITED">User Invited</option>

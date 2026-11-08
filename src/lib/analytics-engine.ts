@@ -61,7 +61,9 @@ export function resolveDateRange(params: {
   startDate?: string
   endDate?: string
 }): { startDate?: Date; endDate?: Date } {
-  const { range, startDate: customStartDateStr, endDate: customEndDateStr } = params
+  const { startDate: customStartDateStr, endDate: customEndDateStr } = params
+  // Default range preset to 'last30' when no range or custom dates are specified
+  const range = params.range || (!customStartDateStr && !customEndDateStr ? 'last30' : undefined)
   const now = new Date()
 
   let startDate: Date | undefined
@@ -119,17 +121,17 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
   const planLimits = getPlanLimits(org?.plan || 'FREE')
   const retentionCutoff = new Date(Date.now() - planLimits.retentionDays * 24 * 60 * 60 * 1000)
 
-  const whereClause: Prisma.DataPointWhereInput = {
+  const rollupWhereClause: Prisma.DailyRollupWhereInput = {
     organizationId: filter.organizationId,
     dataset: { status: 'COMPLETED' },
   }
 
   if (filter.workspaceId) {
-    whereClause.workspaceId = filter.workspaceId
+    rollupWhereClause.workspaceId = filter.workspaceId
   }
 
   if (filter.datasetId && filter.datasetId !== 'all') {
-    whereClause.datasetId = filter.datasetId
+    rollupWhereClause.datasetId = filter.datasetId
   }
 
   // Retention limit enforcement: date cannot be older than retentionCutoff
@@ -138,35 +140,33 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     effectiveStartDate = retentionCutoff
   }
 
-  whereClause.date = {
+  rollupWhereClause.date = {
     gte: effectiveStartDate,
   }
 
   if (filter.endDate) {
-    whereClause.date.lte = filter.endDate
+    rollupWhereClause.date.lte = filter.endDate
   }
 
   if (filter.categories && filter.categories.length > 0) {
-    whereClause.category = { in: filter.categories }
+    rollupWhereClause.category = { in: filter.categories }
   }
 
-  // 1. High-Performance DB Aggregation for Totals & Count
-  const totalsPromise = prisma.dataPoint.aggregate({
-    where: whereClause,
+  // 1. High-Performance Rollup Aggregation for Totals & Count
+  const totalsPromise = prisma.dailyRollup.aggregate({
+    where: rollupWhereClause,
     _sum: {
       metric1: true,
       metric2: true,
       metric3: true,
-    },
-    _count: {
-      id: true,
+      recordCount: true,
     },
   })
 
-  // 2. High-Performance DB GroupBy for Time Series (scales to millions of rows)
-  const timeSeriesPromise = prisma.dataPoint.groupBy({
+  // 2. High-Performance Rollup GroupBy for Time Series (scans ~3,650 rows instead of 1M)
+  const timeSeriesPromise = prisma.dailyRollup.groupBy({
     by: ['date'],
-    where: whereClause,
+    where: rollupWhereClause,
     _sum: {
       metric1: true,
       metric2: true,
@@ -177,10 +177,10 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     },
   })
 
-  // 3. High-Performance DB GroupBy for Category Breakdown
-  const categoryBreakdownPromise = prisma.dataPoint.groupBy({
+  // 3. High-Performance Rollup GroupBy for Category Breakdown
+  const categoryBreakdownPromise = prisma.dailyRollup.groupBy({
     by: ['category'],
-    where: whereClause,
+    where: rollupWhereClause,
     _sum: {
       metric1: true,
     },
@@ -191,26 +191,17 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     },
   })
 
-  // 4. Scoped Dataset Lookup (prevents cross-tenant dataset leaks)
-  const datasetPromise = filter.datasetId && filter.datasetId !== 'all'
-    ? prisma.dataset.findFirst({
-        where: {
-          id: filter.datasetId,
-          organizationId: filter.organizationId,
-          ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
-          status: 'COMPLETED',
-        },
-      })
-    : prisma.dataset.findFirst({
-        where: {
-          organizationId: filter.organizationId,
-          status: 'COMPLETED',
-          ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
-        },
-        orderBy: { createdAt: 'desc' },
-      })
+  // 4. Combined Datasets Lookup (provides datasets, categories, and active dataset in 1 fast query)
+  const datasetsPromise = prisma.dataset.findMany({
+    where: {
+      organizationId: filter.organizationId,
+      ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
+    },
+    select: { id: true, name: true, type: true, rowCount: true, status: true, createdAt: true, categories: true },
+    orderBy: { createdAt: 'desc' },
+  })
 
-  // 5. Prior Period Aggregate Calculation
+  // 5. Prior Period Aggregate Calculation via DailyRollup
   let priorPeriodPromise: Promise<{
     _sum: {
       metric1: Prisma.Decimal | null
@@ -226,7 +217,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
       const priorPeriodStart = new Date(effectiveStartDate.getTime() - durationMs)
       const priorPeriodEnd = effectiveStartDate
 
-      priorPeriodPromise = prisma.dataPoint.aggregate({
+      priorPeriodPromise = prisma.dailyRollup.aggregate({
         where: {
           organizationId: filter.organizationId,
           dataset: { status: 'COMPLETED' },
@@ -247,38 +238,19 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     }
   }
 
-  // 6. Distinct categories available in workspace within retention (Postgres GROUP BY via index)
-  const availableCategoriesPromise = prisma.dataPoint.groupBy({
-    by: ['category'],
+  // 6. Count data points hidden specifically by retention cutoff via pre-aggregated DailyRollup
+  const hiddenCountPromise = prisma.dailyRollup.aggregate({
     where: {
       organizationId: filter.organizationId,
       dataset: { status: 'COMPLETED' },
-      ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
-      date: { gte: retentionCutoff },
-    },
-    orderBy: { category: 'asc' },
-  })
-
-  // 7. Datasets available in workspace
-  const datasetsPromise = prisma.dataset.findMany({
-    where: {
-      organizationId: filter.organizationId,
-      ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
-    },
-    select: { id: true, name: true, type: true, rowCount: true, status: true, createdAt: true },
-    orderBy: { createdAt: 'desc' },
-  })
-
-  // 8. Count data points hidden specifically by retention cutoff
-  const hiddenCountPromise = prisma.dataPoint.count({
-    where: {
-      organizationId: filter.organizationId,
       ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
       ...(filter.datasetId && filter.datasetId !== 'all' ? { datasetId: filter.datasetId } : {}),
-      dataset: { status: 'COMPLETED' },
       date: {
         lt: retentionCutoff,
       },
+    },
+    _sum: {
+      recordCount: true,
     },
   })
 
@@ -288,20 +260,29 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     timeSeriesGroups,
     categoryGroups,
     priorPeriodTotals,
-    availableCategories,
-    datasets,
-    dataset,
-    hiddenCount,
+    allDatasets,
+    hiddenCountResult,
   ] = await Promise.all([
     totalsPromise,
     timeSeriesPromise,
     categoryBreakdownPromise,
     priorPeriodPromise,
-    availableCategoriesPromise,
     datasetsPromise,
-    datasetPromise,
     hiddenCountPromise,
   ])
+
+  const completedDatasets = allDatasets.filter((d) => d.status === 'COMPLETED')
+  const dataset = filter.datasetId && filter.datasetId !== 'all'
+    ? completedDatasets.find((d) => d.id === filter.datasetId) || null
+    : completedDatasets[0] || null
+
+  const availableCategories = Array.from(
+    new Set(completedDatasets.flatMap((d) => d.categories))
+  ).sort()
+  const hiddenCount = Number(hiddenCountResult._sum.recordCount || 0)
+
+  // Map datasets for return without internal categories array
+  const datasets = allDatasets.map(({ categories: _cats, ...rest }) => rest)
 
   const isMarketing = dataset?.type === 'MARKETING'
 
@@ -316,7 +297,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
   const primaryTotal = Number(totals._sum.metric1 || 0)
   const secondaryTotal = Number(totals._sum.metric2 || 0)
   const tertiaryTotal = Number(totals._sum.metric3 || 0)
-  const totalRecords = totals._count.id
+  const totalRecords = Number(totals._sum.recordCount || 0)
 
   // Transform daily time-series
   const timeSeries: TimeSeriesPoint[] = timeSeriesGroups.map((g) => ({
@@ -383,7 +364,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     },
     timeSeries,
     categoryBreakdown,
-    availableCategories: availableCategories.map((c) => c.category),
+    availableCategories,
     datasets,
     isMarketing,
     retentionInfo: {

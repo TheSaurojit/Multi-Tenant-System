@@ -148,15 +148,15 @@ export function Sidebar({
         <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 space-y-2">
           {/* Level 1: Organization Switcher */}
           <div className="relative">
-            <div className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1 pb-1 flex items-center justify-between">
+            <div className="text-[10px] font-bold tracking-wider text-zinc-500 dark:text-zinc-400 uppercase px-1 pb-1 flex items-center justify-between">
               <span>Organization</span>
               <div className="flex items-center gap-2">
-                <span className="text-[9px] font-normal text-zinc-400 hidden sm:inline">Company / Billing</span>
+                <span className="text-[9px] font-normal text-zinc-500 dark:text-zinc-400 hidden sm:inline">Company / Billing</span>
                 {/* Mobile Close Button */}
                 <button
                   type="button"
                   onClick={onClose}
-                  className="lg:hidden p-1 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  className="lg:hidden p-1 rounded-md text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                   aria-label="Close sidebar"
                   title="Close sidebar"
                 >
@@ -193,13 +193,13 @@ export function Sidebar({
                   </span>
                 </div>
               </div>
-              <ChevronDown className="w-3.5 h-3.5 text-zinc-400 shrink-0 ml-1" />
+              <ChevronDown className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 shrink-0 ml-1" />
             </button>
 
             {/* Org Dropdown Menu */}
             {orgDropdownOpen && (
               <div className="absolute top-16 left-0 right-0 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-800 py-1.5 animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
+                <div className="px-3 py-1.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                   Organizations
                 </div>
                 <div className="max-h-48 overflow-y-auto">
@@ -210,7 +210,7 @@ export function Sidebar({
                       className="w-full flex items-center justify-between px-3 py-2 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-left"
                     >
                       <div className="flex items-center gap-2 truncate">
-                        <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <Building2 className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 shrink-0" />
                         <span className="truncate">{m.orgName}</span>
                         <span className="text-[9px] px-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
                           {m.plan}
@@ -241,9 +241,9 @@ export function Sidebar({
 
           {/* Level 2: Child Workspace Selector */}
           <div className="relative">
-            <div className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1 pb-1 flex items-center justify-between">
+            <div className="text-[10px] font-bold tracking-wider text-zinc-500 dark:text-zinc-400 uppercase px-1 pb-1 flex items-center justify-between">
               <span>Workspace</span>
-              <span className="text-[9px] text-zinc-400 font-mono">
+              <span className="text-[9px] text-zinc-500 dark:text-zinc-400 font-mono">
                 {workspacesCount} / {planLimits.maxWorkspaces >= 100 ? '∞' : planLimits.maxWorkspaces}
               </span>
             </div>
@@ -260,7 +260,7 @@ export function Sidebar({
                   <p className="font-semibold text-xs text-indigo-950 dark:text-indigo-200 truncate">
                     {currentUser.activeWorkspaceName}
                   </p>
-                  <p className="text-[10px] text-zinc-400 truncate">Project Workspace</p>
+                  <p className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">Project Workspace</p>
                 </div>
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-indigo-500 shrink-0 ml-1" />
@@ -269,7 +269,7 @@ export function Sidebar({
             {/* Workspace Dropdown Menu */}
             {workspaceDropdownOpen && (
               <div className="absolute top-16 left-0 right-0 z-50 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-800 py-1.5 animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-3 py-1.5 flex items-center justify-between text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
+                <div className="px-3 py-1.5 flex items-center justify-between text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                   <span>Workspaces ({workspacesCount})</span>
                   <span className="font-mono">
                     Quota: {workspacesCount}/{planLimits.maxWorkspaces >= 100 ? 'Unlimited' : planLimits.maxWorkspaces}
@@ -350,7 +350,7 @@ export function Sidebar({
                     : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200'
                 }`}
               >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-zinc-400'}`} />
+                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-zinc-500 dark:text-zinc-400'}`} />
                 <span>{item.label}</span>
               </Link>
             )
@@ -367,14 +367,15 @@ export function Sidebar({
               <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate">
                 {currentUser.name}
               </p>
-              <p className="text-[10px] text-zinc-400 truncate">{currentUser.email}</p>
+              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">{currentUser.email}</p>
             </div>
           </div>
           <form action={logoutAction}>
             <button
               type="submit"
               title="Log out"
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+              aria-label="Log out"
+              className="p-1.5 rounded-lg text-zinc-500 hover:text-red-600 hover:bg-red-50 dark:text-zinc-400 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>

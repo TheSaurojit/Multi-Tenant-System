@@ -13,6 +13,7 @@ async function main() {
   // Clean existing demo data in proper cascade order
   await prisma.auditLog.deleteMany()
   await prisma.savedReport.deleteMany()
+  await prisma.dailyRollup.deleteMany()
   await prisma.dataPoint.deleteMany()
   await prisma.dataset.deleteMany()
   await prisma.invitation.deleteMany()
@@ -139,6 +140,7 @@ async function main() {
       organizationId: acmeOrg.id,
       workspaceId: acmeSalesWs.id,
       uploadedById: adminUser.id,
+      categories: ['Enterprise Software', 'Hardware Solutions', 'Cloud Services', 'Consulting'],
     },
   })
 
@@ -152,6 +154,7 @@ async function main() {
       organizationId: acmeOrg.id,
       workspaceId: acmeMarketingWs.id,
       uploadedById: memberUser.id,
+      categories: ['Google Search Ads', 'LinkedIn Ads', 'Meta Ads', 'Tech Newsletter'],
     },
   })
 
@@ -218,6 +221,44 @@ async function main() {
         ...p,
       },
     })
+  }
+
+  // Pre-aggregate DailyRollups for Seed Datasets
+  for (const ds of [
+    { id: salesDataset.id, orgId: acmeOrg.id, wsId: acmeSalesWs.id, points: salesData },
+    { id: marketingDataset.id, orgId: acmeOrg.id, wsId: acmeMarketingWs.id, points: marketingData },
+  ]) {
+    const map = new Map<string, { date: Date; category: string; metric1: number; metric2: number; metric3: number; recordCount: number }>()
+    for (const p of ds.points) {
+      const d = new Date(p.date)
+      d.setUTCHours(0, 0, 0, 0)
+      const key = `${d.toISOString().split('T')[0]}:${p.category}`
+      const ex = map.get(key)
+      if (ex) {
+        ex.metric1 += p.metric1
+        ex.metric2 += p.metric2
+        ex.metric3 += p.metric3
+        ex.recordCount += 1
+      } else {
+        map.set(key, { date: d, category: p.category, metric1: p.metric1, metric2: p.metric2, metric3: p.metric3, recordCount: 1 })
+      }
+    }
+    const rollups = Array.from(map.values())
+    if (rollups.length > 0) {
+      await prisma.dailyRollup.createMany({
+        data: rollups.map((r) => ({
+          datasetId: ds.id,
+          organizationId: ds.orgId,
+          workspaceId: ds.wsId,
+          date: r.date,
+          category: r.category,
+          metric1: r.metric1,
+          metric2: r.metric2,
+          metric3: r.metric3,
+          recordCount: r.recordCount,
+        })),
+      })
+    }
   }
 
   // 8. Create Saved Reports inside specific Workspaces

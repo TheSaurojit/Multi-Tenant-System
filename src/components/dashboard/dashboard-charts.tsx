@@ -59,7 +59,7 @@ export function DashboardCharts({
 
         <div className="h-72 w-full pt-2">
           {timeSeries.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-xs text-zinc-400">
+            <div className="h-full flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-400">
               No data points for this timeframe.
             </div>
           ) : (
@@ -164,7 +164,7 @@ export function DashboardCharts({
 
         <div className="h-72 w-full pt-2">
           {categoryBreakdown.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-xs text-zinc-400">
+            <div className="h-full flex items-center justify-center text-xs text-zinc-500 dark:text-zinc-400">
               No category data available.
             </div>
           ) : (
