@@ -6,16 +6,36 @@ import { checkFeatureLimit } from '@/lib/feature-limits'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getPlanLimits } from '@/lib/plans'
 import { ExportCsvFilterSchema } from '@/lib/validations'
-import { exportDataPointsToCsv, resolveDateRange } from '@/lib/analytics-engine'
+import { resolveDateRange } from '@/lib/analytics-engine'
 import { logAuditEvent } from '@/lib/audit'
 import { Prisma } from '../../../../../generated/prisma'
+
+function escapeCsvValue(val: unknown): string {
+  if (val === null || val === undefined) return ''
+  let str = String(val)
+  // CSV formula injection protection: neutralize spreadsheet command prefixes
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`
+  }
+  // Standard RFC 4180 CSV escaping for values containing commas, quotes, or newlines
+  if (/[",\r\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`
+  }
+  return str
+}
 
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuthUser()
     assertPermission(user.role, 'data:export')
 
-    const exportRate = await checkRateLimit(`export:${user.id}`, 20, 5 * 60 * 1000)
+    const maxExports =
+      process.env.NODE_ENV === 'development' ||
+      process.env.NODE_ENV === 'test' ||
+      process.env.LOAD_TEST === 'true'
+        ? 5000
+        : 20
+    const exportRate = await checkRateLimit(`export:${user.id}`, maxExports, 5 * 60 * 1000)
     if (!exportRate.allowed) {
       return NextResponse.json(
         { error: 'Too many export requests. Please try again shortly.' },
@@ -93,12 +113,6 @@ export async function GET(req: NextRequest) {
       whereClause.category = category
     }
 
-    const dataPoints = await prisma.dataPoint.findMany({
-      where: whereClause,
-      orderBy: { date: 'desc' },
-      take: planLimits.maxRowsPerCsv,
-    })
-
     const dataset = datasetId && datasetId !== 'all'
       ? await prisma.dataset.findFirst({
           where: {
@@ -117,7 +131,12 @@ export async function GET(req: NextRequest) {
         })
 
     const isMarketing = dataset?.type === 'MARKETING'
-    const csvContent = exportDataPointsToCsv(dataPoints, isMarketing)
+    const maxRows = planLimits.maxRowsPerCsv
+    const encoder = new TextEncoder()
+
+    const headerRow = isMarketing
+      ? 'Date,Category,SubCategory,Spend,Impressions,Conversions,Region,Channel\r\n'
+      : 'Date,Category,SubCategory,Revenue,Cost,UnitsSold,Region,Channel\r\n'
 
     await logAuditEvent({
       organizationId: user.activeOrgId,
@@ -127,17 +146,69 @@ export async function GET(req: NextRequest) {
       entityId: user.activeWorkspaceId,
       details: {
         event: 'CSV_EXPORT',
-        rowCount: dataPoints.length,
         filters: rawParams,
       },
     })
 
+    // Stream the response in chunks to prevent blocking Node's event loop
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          controller.enqueue(encoder.encode(headerRow))
+
+          const BATCH_SIZE = 2500
+          let offset = 0
+
+          while (offset < maxRows) {
+            const currentTake = Math.min(BATCH_SIZE, maxRows - offset)
+            const batch = await prisma.dataPoint.findMany({
+              where: whereClause,
+              orderBy: { date: 'desc' },
+              take: currentTake,
+              skip: offset,
+              select: {
+                date: true,
+                category: true,
+                subCategory: true,
+                metric1: true,
+                metric2: true,
+                metric3: true,
+                region: true,
+                channel: true,
+              },
+            })
+
+            if (batch.length === 0) break
+
+            let chunk = ''
+            for (const p of batch) {
+              const dateStr = p.date ? new Date(p.date).toISOString().split('T')[0] : ''
+              chunk += `${dateStr},${escapeCsvValue(p.category)},${escapeCsvValue(p.subCategory)},${Number(p.metric1) || 0},${Number(p.metric2) || 0},${Number(p.metric3) || 0},${escapeCsvValue(p.region)},${escapeCsvValue(p.channel)}\r\n`
+            }
+
+            controller.enqueue(encoder.encode(chunk))
+            offset += batch.length
+
+            if (batch.length < currentTake) break
+
+            // Yield to the Node event loop between batches
+            await new Promise((resolve) => setImmediate(resolve))
+          }
+
+          controller.close()
+        } catch (streamErr) {
+          controller.error(streamErr)
+        }
+      },
+    })
+
     const dateTag = new Date().toISOString().split('T')[0]
-    return new Response(csvContent, {
+    return new Response(stream, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="workspace-export-${dateTag}.csv"`,
+        'Transfer-Encoding': 'chunked',
       },
     })
   } catch (err: unknown) {

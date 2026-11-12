@@ -7,7 +7,7 @@ import { logAuditEvent } from '@/lib/audit'
 import { checkFeatureLimit, getPlanLimits } from '@/lib/feature-limits'
 import { parseAndValidateCsv } from '@/lib/csv-parser'
 import { EntityIdSchema } from '@/lib/validations'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag, updateTag } from 'next/cache'
 import { Prisma } from '../../../generated/prisma'
 
 export async function uploadCsvAction(formData: FormData) {
@@ -200,6 +200,13 @@ export async function uploadCsvAction(formData: FormData) {
 
     revalidatePath('/datasets')
     revalidatePath('/dashboard')
+    try {
+      updateTag(`analytics-${user.activeWorkspaceId}`)
+      revalidateTag(`analytics-${user.activeWorkspaceId}`, 'max')
+      revalidateTag('analytics', 'max')
+    } catch {
+      // outside request context
+    }
 
     return {
       success: true,
@@ -269,5 +276,12 @@ export async function deleteDatasetAction(datasetId: string) {
 
   revalidatePath('/datasets')
   revalidatePath('/dashboard')
+  try {
+    updateTag(`analytics-${user.activeWorkspaceId}`)
+    revalidateTag(`analytics-${user.activeWorkspaceId}`, 'max')
+    revalidateTag('analytics', 'max')
+  } catch {
+    // outside request context
+  }
   return { success: true }
 }

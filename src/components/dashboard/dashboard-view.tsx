@@ -221,7 +221,7 @@ export function DashboardView({
               aria-label="Filter by dataset"
               value={currentDatasetId}
               onChange={(e) => updateFilters('datasetId', e.target.value)}
-              className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+              className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
             >
               <option value="all">All Workspace Datasets ({datasets.length})</option>
               {datasets.map((d) => (
@@ -239,7 +239,7 @@ export function DashboardView({
               aria-label="Filter by date range"
               value={currentDateRange}
               onChange={(e) => updateFilters('range', e.target.value)}
-              className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+              className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
             >
               <option value="last7">Last 7 Days</option>
               <option value="last30">Last 30 Days</option>
@@ -260,7 +260,7 @@ export function DashboardView({
                   aria-label="Start date"
                   value={currentStartDate}
                   onChange={(e) => updateFilters('startDate', e.target.value)}
-                  className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
+                  className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
                 />
               </div>
               <div className="flex items-center gap-1 bg-zinc-50 dark:bg-zinc-800/80 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs">
@@ -270,7 +270,7 @@ export function DashboardView({
                   aria-label="End date"
                   value={currentEndDate}
                   onChange={(e) => updateFilters('endDate', e.target.value)}
-                  className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
+                  className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 text-xs focus:ring-0 cursor-pointer"
                 />
               </div>
             </div>
@@ -284,7 +284,7 @@ export function DashboardView({
                 aria-label="Filter by category"
                 value={currentCategory}
                 onChange={(e) => updateFilters('category', e.target.value)}
-                className="bg-zinc-900 border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+                className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
               >
                 <option value="all">All Categories</option>
                 {availableCategories.map((c) => (
@@ -316,7 +316,7 @@ export function DashboardView({
                   }
                 }}
                 defaultValue=""
-                className="bg-zinc-900 border-0 text-indigo-900 dark:text-indigo-200 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+                className="bg-transparent border-0 text-indigo-900 dark:text-indigo-200 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
               >
                 <option value="" disabled>
                   Load Saved Report...

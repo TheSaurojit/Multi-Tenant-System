@@ -2,6 +2,7 @@ import { prisma } from './db'
 import Papa from 'papaparse'
 import { getPlanLimits } from './plans'
 import { Prisma } from '../../generated/prisma'
+import { unstable_cache } from 'next/cache'
 
 export interface AnalyticsFilter {
   organizationId: string
@@ -113,7 +114,7 @@ export function resolveDateRange(params: {
   return { startDate, endDate }
 }
 
-export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
+export async function computeWorkspaceAnalytics(filter: AnalyticsFilter) {
   const org = await prisma.organization.findUnique({
     where: { id: filter.organizationId },
     select: { plan: true },
@@ -191,13 +192,13 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     },
   })
 
-  // 4. Combined Datasets Lookup (provides datasets, categories, and active dataset in 1 fast query)
+  // 4. Combined Datasets Lookup (provides datasets and active dataset in 1 fast query)
   const datasetsPromise = prisma.dataset.findMany({
     where: {
       organizationId: filter.organizationId,
       ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
     },
-    select: { id: true, name: true, type: true, rowCount: true, status: true, createdAt: true, categories: true },
+    select: { id: true, name: true, type: true, rowCount: true, status: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
 
@@ -254,6 +255,29 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     },
   })
 
+  // 7. Retention-Aware Available Categories via DailyRollup
+  const availableCategoriesWhere: Prisma.DailyRollupWhereInput = {
+    organizationId: filter.organizationId,
+    dataset: { status: 'COMPLETED' },
+    date: {
+      gte: retentionCutoff,
+    },
+  }
+  if (filter.workspaceId) {
+    availableCategoriesWhere.workspaceId = filter.workspaceId
+  }
+  if (filter.datasetId && filter.datasetId !== 'all') {
+    availableCategoriesWhere.datasetId = filter.datasetId
+  }
+
+  const availableCategoriesPromise = prisma.dailyRollup.groupBy({
+    by: ['category'],
+    where: availableCategoriesWhere,
+    orderBy: {
+      category: 'asc',
+    },
+  })
+
   // Execute all independent queries concurrently via Promise.all
   const [
     totals,
@@ -262,6 +286,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     priorPeriodTotals,
     allDatasets,
     hiddenCountResult,
+    availableCategoriesGroups,
   ] = await Promise.all([
     totalsPromise,
     timeSeriesPromise,
@@ -269,6 +294,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     priorPeriodPromise,
     datasetsPromise,
     hiddenCountPromise,
+    availableCategoriesPromise,
   ])
 
   const completedDatasets = allDatasets.filter((d) => d.status === 'COMPLETED')
@@ -276,13 +302,12 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
     ? completedDatasets.find((d) => d.id === filter.datasetId) || null
     : completedDatasets[0] || null
 
-  const availableCategories = Array.from(
-    new Set(completedDatasets.flatMap((d) => d.categories))
-  ).sort()
+  const availableCategories = availableCategoriesGroups
+    .map((g) => g.category)
+    .filter(Boolean)
   const hiddenCount = Number(hiddenCountResult._sum.recordCount || 0)
 
-  // Map datasets for return without internal categories array
-  const datasets = allDatasets.map(({ categories: _cats, ...rest }) => rest)
+  const datasets = allDatasets
 
   const isMarketing = dataset?.type === 'MARKETING'
 
@@ -373,6 +398,47 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
       plan: org?.plan || 'FREE',
     },
   }
+}
+
+export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
+  if (typeof unstable_cache !== 'function') {
+    return computeWorkspaceAnalytics(filter)
+  }
+
+  const orgId = filter.organizationId
+  const workspaceId = filter.workspaceId || 'all'
+  const datasetId = filter.datasetId || 'all'
+  const startStr = filter.startDate ? filter.startDate.toISOString() : 'none'
+  const endStr = filter.endDate ? filter.endDate.toISOString() : 'none'
+  const catStr =
+    filter.categories && filter.categories.length > 0
+      ? [...filter.categories].sort().join(',')
+      : 'all'
+
+  const cacheKey = [
+    'workspace-analytics',
+    orgId,
+    workspaceId,
+    datasetId,
+    startStr,
+    endStr,
+    catStr,
+  ]
+
+  const cachedFn = unstable_cache(
+    async () => computeWorkspaceAnalytics(filter),
+    cacheKey,
+    {
+      revalidate: 60,
+      tags: [
+        'analytics',
+        `analytics-${workspaceId}`,
+        `analytics-org-${orgId}`,
+      ],
+    }
+  )
+
+  return cachedFn()
 }
 
 function sanitizeCsvValue(val: unknown): string | number {

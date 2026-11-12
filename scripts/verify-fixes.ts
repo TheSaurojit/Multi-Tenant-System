@@ -1,3 +1,4 @@
+import './mock-server-only.js'
 import { prisma } from '../src/lib/db'
 import {
   InviteMemberSchema,
@@ -9,7 +10,7 @@ import {
   PlanSchema,
 } from '../src/lib/validations'
 import { hasPermission } from '../src/lib/permissions'
-import { exportDataPointsToCsv, getWorkspaceAnalytics } from '../src/lib/analytics-engine'
+import { exportDataPointsToCsv, getWorkspaceAnalytics, resolveDateRange } from '../src/lib/analytics-engine'
 import fs from 'fs'
 import path from 'path'
 
@@ -147,10 +148,12 @@ async function runFixesVerification() {
   const acmeOrg = await prisma.organization.findUnique({ where: { slug: 'acme-analytics' } })
   const acmeWorkspace = await prisma.workspace.findFirst({ where: { organizationId: acmeOrg!.id } })
 
+  const { startDate, endDate } = resolveDateRange({ range: 'last90' })
   const analytics = await getWorkspaceAnalytics({
     organizationId: acmeOrg!.id,
     workspaceId: acmeWorkspace?.id || '',
-    range: 'last90',
+    startDate,
+    endDate,
   })
 
   assert(analytics.kpis !== undefined, 'Analytics KPIs calculated successfully')

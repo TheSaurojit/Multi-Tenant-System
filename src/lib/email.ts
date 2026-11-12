@@ -4,9 +4,12 @@ const resendApiKey = process.env.RESEND_API_KEY
 const fromEmail = process.env.RESEND_FROM_EMAIL || 'SaaS Analytics <onboarding@resend.dev>'
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
-const resend = resendApiKey && !resendApiKey.includes('placeholder')
-  ? new Resend(resendApiKey)
-  : null
+const resend =
+  resendApiKey &&
+  !resendApiKey.includes('placeholder') &&
+  process.env.NODE_ENV !== 'test'
+    ? new Resend(resendApiKey)
+    : null
 
 export function isEmailConfigured(): boolean {
   return Boolean(resend)
@@ -118,13 +121,17 @@ export async function sendSignupWelcomeEmail({
   }
 
   try {
-    const data = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromEmail,
       to,
       subject,
       html,
     })
-    return { success: true, id: data.data?.id }
+    if (error) {
+      console.error('[Resend Error] Failed to send signup welcome email:', error)
+      return { success: false, error: error.message }
+    }
+    return { success: true, id: data?.id }
   } catch (error: unknown) {
     console.error('[Resend Error] Failed to send signup welcome email:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Failed to send welcome email' }
@@ -185,13 +192,17 @@ export async function sendEmailVerificationEmail({
   }
 
   try {
-    const data = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromEmail,
       to,
       subject,
       html,
     })
-    return { success: true, id: data.data?.id }
+    if (error) {
+      console.error('[Resend Error] Failed to send email verification email:', error)
+      return { success: false, error: error.message }
+    }
+    return { success: true, id: data?.id }
   } catch (error: unknown) {
     console.error('[Resend Error] Failed to send email verification email:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Failed to send verification email' }
@@ -252,13 +263,17 @@ export async function sendForgotPasswordEmail({
   }
 
   try {
-    const data = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromEmail,
       to,
       subject,
       html,
     })
-    return { success: true, id: data.data?.id }
+    if (error) {
+      console.error('[Resend Error] Failed to send password reset email:', error)
+      return { success: false, error: error.message }
+    }
+    return { success: true, id: data?.id }
   } catch (error: unknown) {
     console.error('[Resend Error] Failed to send password reset email:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Failed to send password reset email' }
@@ -315,13 +330,17 @@ export async function sendPasswordResetSuccessEmail({
   }
 
   try {
-    const data = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromEmail,
       to,
       subject,
       html,
     })
-    return { success: true, id: data.data?.id }
+    if (error) {
+      console.error('[Resend Error] Failed to send password reset success email:', error)
+      return { success: false, error: error.message }
+    }
+    return { success: true, id: data?.id }
   } catch (error: unknown) {
     console.error('[Resend Error] Failed to send password reset success email:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Failed to send confirmation email' }
@@ -383,13 +402,17 @@ export async function sendWorkspaceInviteEmail({
   }
 
   try {
-    const data = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromEmail,
       to,
       subject,
       html,
     })
-    return { success: true, id: data.data?.id }
+    if (error) {
+      console.error('[Resend Error] Failed to send workspace invite email:', error)
+      return { success: false, error: error.message }
+    }
+    return { success: true, id: data?.id }
   } catch (error: unknown) {
     console.error('[Resend Error] Failed to send workspace invite email:', error)
     return { success: false, error: error instanceof Error ? error.message : 'Failed to send invite email' }

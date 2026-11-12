@@ -243,12 +243,18 @@ export async function signupAction(formData: FormData) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const verificationUrl = `${appUrl}/verify-email?token=${rawToken}`
 
-  await sendEmailVerificationEmail({
+  const emailResult = await sendEmailVerificationEmail({
     to: user.email,
     name: user.name,
     verificationUrl,
     expiresInHours: 24,
   })
+
+  if (!emailResult.success) {
+    return {
+      error: emailResult.error || 'Failed to send verification email. Please check your email and try again.',
+    }
+  }
 
   const rawFrom = formData.get('from')
   const safeFrom = resolveAuthRedirect(rawFrom, '')
@@ -729,12 +735,18 @@ export async function resendVerificationEmailAction(formData: FormData) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const verificationUrl = `${appUrl}/verify-email?token=${rawToken}`
 
-  await sendEmailVerificationEmail({
+  const emailResult = await sendEmailVerificationEmail({
     to: user.email,
     name: user.name,
     verificationUrl,
     expiresInHours: 24,
   })
+
+  if (!emailResult.success) {
+    return {
+      error: emailResult.error || 'Failed to send verification email. Please check your email and try again.',
+    }
+  }
 
   return genericResponse
 }

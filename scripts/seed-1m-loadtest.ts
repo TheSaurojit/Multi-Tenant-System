@@ -1,3 +1,4 @@
+import './mock-server-only.js'
 import { prisma } from '../src/lib/db'
 
 async function seed1MLoadTest() {
