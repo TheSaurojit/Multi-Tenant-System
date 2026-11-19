@@ -163,6 +163,13 @@ export async function signupAction(formData: FormData) {
   })
 
   if (existingUser) {
+    if (!existingUser.emailVerified) {
+      return {
+        error: 'An account with this email is pending verification. Please verify your email or request a new verification link.',
+        unverified: true,
+        email: existingUser.email,
+      }
+    }
     return { error: 'An account with this email already exists. Please log in.' }
   }
 
@@ -250,17 +257,16 @@ export async function signupAction(formData: FormData) {
     expiresInHours: 24,
   })
 
-  if (!emailResult.success) {
-    return {
-      error: emailResult.error || 'Failed to send verification email. Please check your email and try again.',
-    }
-  }
-
   const rawFrom = formData.get('from')
   const safeFrom = resolveAuthRedirect(rawFrom, '')
+
+  // Even if email delivery fails, the account and token have been created.
+  // Instead of stranding the user on the signup form in an unusable state,
+  // redirect them to the verification page with emailFailed=true so they can 1-click resend.
+  const statusFlag = emailResult.success ? 'sent=true' : 'emailFailed=true'
   const redirectTo = safeFrom
-    ? `/verify-email?sent=true&email=${encodeURIComponent(user.email)}&from=${encodeURIComponent(safeFrom)}`
-    : `/verify-email?sent=true&email=${encodeURIComponent(user.email)}`
+    ? `/verify-email?${statusFlag}&email=${encodeURIComponent(user.email)}&from=${encodeURIComponent(safeFrom)}`
+    : `/verify-email?${statusFlag}&email=${encodeURIComponent(user.email)}`
 
   redirect(redirectTo)
 }

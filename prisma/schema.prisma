@@ -198,6 +198,7 @@ model DataPoint {
   @@index([organizationId, date])
   @@index([organizationId, category])
   @@index([workspaceId, date])
+  @@index([workspaceId, date(sort: Desc), id(sort: Desc)])
   @@index([workspaceId, category])
   @@index([datasetId])
 }
@@ -285,6 +286,5 @@ model DailyRollup {
   @@index([workspaceId, category])
   @@index([organizationId, date])
 }
-
 
 

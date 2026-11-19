@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { cache } from 'react'
 import { prisma } from './db'
-import { Role, Plan } from '../../generated/prisma'
+import { Role, Plan, Prisma } from '../../generated/prisma'
 
 export function getJwtSecret(): Uint8Array {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -71,16 +71,30 @@ export async function createSessionToken(payload: SessionPayload): Promise<strin
     .sign(JWT_SECRET)
 }
 
+const tokenPayloadCache = new Map<string, { payload: SessionPayload | null; expiresAt: number }>()
+
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
+  const now = Date.now()
+  const cached = tokenPayloadCache.get(token)
+  if (cached && cached.expiresAt > now) {
+    return cached.payload
+  }
+
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET)
-    if (!payload.userId || typeof payload.sessionVersion !== 'number') return null
-    return {
+    if (!payload.userId || typeof payload.sessionVersion !== 'number') {
+      tokenPayloadCache.set(token, { payload: null, expiresAt: now + 10000 })
+      return null
+    }
+    const sessionPayload: SessionPayload = {
       userId: payload.userId as string,
       email: payload.email as string,
       sessionVersion: payload.sessionVersion,
     }
+    tokenPayloadCache.set(token, { payload: sessionPayload, expiresAt: now + 60000 })
+    return sessionPayload
   } catch {
+    tokenPayloadCache.set(token, { payload: null, expiresAt: now + 10000 })
     return null
   }
 }
@@ -96,7 +110,78 @@ export async function bumpSessionVersion(userId: string): Promise<number> {
     data: { sessionVersion: { increment: 1 } },
     select: { sessionVersion: true },
   })
+  // Clear any cached session for this user
+  for (const key of userDbCache.keys()) {
+    if (key.startsWith(`${userId}:`)) userDbCache.delete(key)
+  }
+  tokenPayloadCache.clear()
   return updated.sessionVersion
+}
+
+type DbUserWithRelations = Prisma.UserGetPayload<{
+  include: {
+    memberships: {
+      include: {
+        organization: {
+          include: {
+            workspaces: true
+          }
+        }
+      }
+    }
+  }
+}>
+
+interface CachedUserData {
+  user: DbUserWithRelations
+  expiresAt: number
+}
+const userDbCache = new Map<string, CachedUserData>()
+const userDbInFlight = new Map<string, Promise<DbUserWithRelations | null>>()
+
+async function getCachedDbUser(userId: string, sessionVersion: number): Promise<DbUserWithRelations | null> {
+  const cacheKey = `${userId}:${sessionVersion}`
+  const now = Date.now()
+  const cached = userDbCache.get(cacheKey)
+  if (cached && cached.expiresAt > now) {
+    return cached.user
+  }
+
+  const inFlight = userDbInFlight.get(cacheKey)
+  if (inFlight) {
+    return inFlight
+  }
+
+  const queryPromise = (async () => {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          memberships: {
+            include: {
+              organization: {
+                include: {
+                  workspaces: {
+                    orderBy: { createdAt: 'asc' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (user) {
+        userDbCache.set(cacheKey, { user, expiresAt: Date.now() + 60000 })
+      }
+      return user
+    } finally {
+      userDbInFlight.delete(cacheKey)
+    }
+  })()
+
+  userDbInFlight.set(cacheKey, queryPromise)
+  return queryPromise
 }
 
 /**
@@ -192,22 +277,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     const session = await verifySessionToken(token)
     if (!session) return null
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      include: {
-        memberships: {
-          include: {
-            organization: {
-              include: {
-                workspaces: {
-                  orderBy: { createdAt: 'asc' },
-                },
-              },
-            },
-          },
-        },
-      },
-    })
+    const user = await getCachedDbUser(session.userId, session.sessionVersion)
 
     if (!user || user.memberships.length === 0) return null
 

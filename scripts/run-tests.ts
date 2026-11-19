@@ -24,6 +24,7 @@ import { hasPermission, assertPermission } from '../src/lib/permissions'
 import { getPlanLimits } from '../src/lib/plans'
 import { checkFeatureLimit, getRetentionCutoff } from '../src/lib/feature-limits'
 import { resolveAuthRedirect } from '../src/lib/auth'
+import { getWorkspaceAnalyticsCacheKey } from '../src/lib/analytics-engine'
 import { Prisma } from '../generated/prisma'
 
 let passedTests = 0
@@ -615,6 +616,73 @@ async function runTestSuite() {
     assert(
       resolveAuthRedirect(null, '/custom-fallback') === '/custom-fallback',
       'Respects custom fallback when input is invalid'
+    )
+  }
+
+  // -------------------------------------------------------------------------
+  // 11. ANALYTICS CACHE KEY STABILITY & ISOLATION
+  // -------------------------------------------------------------------------
+  console.log('\n--- Suite 11: Analytics Cache Key Stability & Isolation ---')
+  {
+    const sharedFilters = {
+      organizationId: 'org-1',
+      workspaceId: 'workspace-1',
+      datasetId: 'dataset-1',
+      cacheIdentity: { range: 'last7' },
+    }
+    const firstRequestKey = getWorkspaceAnalyticsCacheKey({
+      ...sharedFilters,
+      startDate: new Date('2026-11-10T07:00:00.001Z'),
+      endDate: new Date('2026-11-17T07:00:00.001Z'),
+    })
+    const secondRequestKey = getWorkspaceAnalyticsCacheKey({
+      ...sharedFilters,
+      startDate: new Date('2026-11-10T07:00:00.999Z'),
+      endDate: new Date('2026-11-17T07:00:00.999Z'),
+    })
+    assert(
+      JSON.stringify(firstRequestKey) === JSON.stringify(secondRequestKey),
+      'Raw date-range identity stays stable as resolved timestamps change'
+    )
+
+    const customRangeKey = getWorkspaceAnalyticsCacheKey({
+      ...sharedFilters,
+      cacheIdentity: {
+        range: 'custom',
+        startDate: '2026-11-10',
+        endDate: '2026-11-17',
+      },
+    })
+    const differentCustomRangeKey = getWorkspaceAnalyticsCacheKey({
+      ...sharedFilters,
+      cacheIdentity: {
+        range: 'custom',
+        startDate: '2026-11-09',
+        endDate: '2026-11-17',
+      },
+    })
+    assert(
+      JSON.stringify(customRangeKey) !== JSON.stringify(differentCustomRangeKey),
+      'Different raw custom date ranges do not share a cache entry'
+    )
+
+    const reorderedCategoriesKey = getWorkspaceAnalyticsCacheKey({
+      ...sharedFilters,
+      categories: ['Sales', 'Marketing'],
+    })
+    const sortedCategoriesKey = getWorkspaceAnalyticsCacheKey({
+      ...sharedFilters,
+      categories: ['Marketing', 'Sales'],
+    })
+    assert(
+      JSON.stringify(reorderedCategoriesKey) === JSON.stringify(sortedCategoriesKey),
+      'Category order does not create duplicate cache entries'
+    )
+    assert(
+      JSON.stringify(firstRequestKey) !== JSON.stringify(
+        getWorkspaceAnalyticsCacheKey({ ...sharedFilters, workspaceId: 'workspace-2' })
+      ),
+      'Workspace remains part of analytics cache isolation'
     )
   }
 

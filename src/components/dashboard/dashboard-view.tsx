@@ -221,7 +221,7 @@ export function DashboardView({
               aria-label="Filter by dataset"
               value={currentDatasetId}
               onChange={(e) => updateFilters('datasetId', e.target.value)}
-              className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+              className="bg-black border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
             >
               <option value="all">All Workspace Datasets ({datasets.length})</option>
               {datasets.map((d) => (
@@ -239,7 +239,7 @@ export function DashboardView({
               aria-label="Filter by date range"
               value={currentDateRange}
               onChange={(e) => updateFilters('range', e.target.value)}
-              className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+              className="bg-black border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
             >
               <option value="last7">Last 7 Days</option>
               <option value="last30">Last 30 Days</option>
@@ -284,7 +284,7 @@ export function DashboardView({
                 aria-label="Filter by category"
                 value={currentCategory}
                 onChange={(e) => updateFilters('category', e.target.value)}
-                className="bg-transparent border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
+                className="bg-black border-0 text-zinc-900 dark:text-zinc-100 font-medium focus:ring-0 cursor-pointer pr-2 text-xs"
               >
                 <option value="all">All Categories</option>
                 {availableCategories.map((c) => (

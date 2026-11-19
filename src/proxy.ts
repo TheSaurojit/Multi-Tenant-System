@@ -25,11 +25,22 @@ if (
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET)
 
+const tokenValidityCache = new Map<string, { valid: boolean; expiresAt: number }>()
+
 async function isValidSessionToken(token: string): Promise<boolean> {
+  const now = Date.now()
+  const cached = tokenValidityCache.get(token)
+  if (cached && cached.expiresAt > now) {
+    return cached.valid
+  }
+
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET)
-    return Boolean(payload?.userId)
+    const valid = Boolean(payload?.userId)
+    tokenValidityCache.set(token, { valid, expiresAt: now + 60000 })
+    return valid
   } catch {
+    tokenValidityCache.set(token, { valid: false, expiresAt: now + 10000 })
     return false
   }
 }

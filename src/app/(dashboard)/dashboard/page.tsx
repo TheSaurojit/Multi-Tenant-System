@@ -10,6 +10,16 @@ import { getPlanLimits } from '@/lib/plans'
 import { getRetentionCutoff } from '@/lib/feature-limits'
 import { Prisma } from '../../../../generated/prisma'
 
+interface DashboardDataCacheEntry {
+  analytics: Awaited<ReturnType<typeof getWorkspaceAnalytics>>
+  savedReports: any[]
+  recentPoints: any[]
+  expiresAt: number
+}
+
+const dashboardDataCache = new Map<string, DashboardDataCacheEntry>()
+const dashboardInFlight = new Map<string, Promise<DashboardDataCacheEntry>>()
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -42,57 +52,110 @@ export default async function DashboardPage({
     effectiveRecentStart = retentionCutoff
   }
 
-  const recentWhere: Prisma.DataPointWhereInput = {
-    organizationId: currentUser.activeOrgId,
-    workspaceId: currentUser.activeWorkspaceId,
-    dataset: { status: 'COMPLETED' },
-    date: {
-      gte: effectiveRecentStart,
-      ...(endDate ? { lte: endDate } : {}),
-    },
-  }
-  if (datasetId && datasetId !== 'all') recentWhere.datasetId = datasetId
-  if (category) recentWhere.category = { in: category }
+  const cacheKey = `${currentUser.activeOrgId}:${currentUser.activeWorkspaceId}:${datasetId || 'all'}:${range}:${category ? category.join(',') : 'all'}:${customStartDateStr || ''}:${customEndDateStr || ''}`
+  const now = Date.now()
+  let cachedData = dashboardDataCache.get(cacheKey)
 
-  // Execute analytics, saved reports, and recent points concurrently
-  const [analytics, savedReports, recentPoints] = await Promise.all([
-    getWorkspaceAnalytics({
-      organizationId: currentUser.activeOrgId,
-      workspaceId: currentUser.activeWorkspaceId,
-      datasetId,
-      startDate,
-      endDate,
-      categories: category,
-    }),
-    prisma.savedReport.findMany({
-      where: {
-        organizationId: currentUser.activeOrgId,
-        workspaceId: currentUser.activeWorkspaceId,
-      },
-      orderBy: { updatedAt: 'desc' },
-    }),
-    prisma.dataPoint.findMany({
-      where: recentWhere,
-      select: {
-        id: true,
-        datasetId: true,
-        organizationId: true,
-        workspaceId: true,
-        date: true,
-        category: true,
-        subCategory: true,
-        metric1: true,
-        metric2: true,
-        metric3: true,
-        region: true,
-        channel: true,
-        metadata: true,
-        createdAt: true,
-      },
-      orderBy: { date: 'desc' },
-      take: 15,
-    }),
-  ])
+  let analytics: Awaited<ReturnType<typeof getWorkspaceAnalytics>>
+  let savedReports: any[]
+  let recentPoints: any[]
+
+  if (cachedData && cachedData.expiresAt > now) {
+    analytics = cachedData.analytics
+    savedReports = cachedData.savedReports
+    recentPoints = cachedData.recentPoints
+  } else {
+    let inFlight = dashboardInFlight.get(cacheKey)
+    if (!inFlight) {
+      inFlight = (async () => {
+        try {
+          // Resolve completed datasets once to eliminate repeated JOINs on 1M rows
+          const completedDatasets = await prisma.dataset.findMany({
+            where: {
+              organizationId: currentUser.activeOrgId,
+              workspaceId: currentUser.activeWorkspaceId,
+              status: 'COMPLETED',
+              ...(datasetId && datasetId !== 'all' ? { id: datasetId } : {}),
+            },
+            select: { id: true },
+          })
+          const completedIds = completedDatasets.map((d) => d.id)
+
+          const recentWhere: Prisma.DataPointWhereInput = {
+            organizationId: currentUser.activeOrgId,
+            workspaceId: currentUser.activeWorkspaceId,
+            datasetId: completedIds.length === 1 ? completedIds[0] : { in: completedIds },
+            date: {
+              gte: effectiveRecentStart,
+              ...(endDate ? { lte: endDate } : {}),
+            },
+          }
+          if (category) recentWhere.category = { in: category }
+
+          const results = await Promise.all([
+            getWorkspaceAnalytics({
+              organizationId: currentUser.activeOrgId,
+              workspaceId: currentUser.activeWorkspaceId,
+              datasetId,
+              startDate,
+              endDate,
+              categories: category,
+              cacheIdentity: {
+                range,
+                startDate: customStartDateStr,
+                endDate: customEndDateStr,
+              },
+            }),
+            prisma.savedReport.findMany({
+              where: {
+                organizationId: currentUser.activeOrgId,
+                workspaceId: currentUser.activeWorkspaceId,
+              },
+              orderBy: { updatedAt: 'desc' },
+            }),
+            prisma.dataPoint.findMany({
+              where: recentWhere,
+              select: {
+                id: true,
+                datasetId: true,
+                organizationId: true,
+                workspaceId: true,
+                date: true,
+                category: true,
+                subCategory: true,
+                metric1: true,
+                metric2: true,
+                metric3: true,
+                region: true,
+                channel: true,
+                metadata: true,
+                createdAt: true,
+              },
+              orderBy: { date: 'desc' },
+              take: 15,
+            }),
+          ])
+
+          const entry: DashboardDataCacheEntry = {
+            analytics: results[0],
+            savedReports: results[1],
+            recentPoints: results[2],
+            expiresAt: Date.now() + 30000, // 30 second TTL
+          }
+          dashboardDataCache.set(cacheKey, entry)
+          return entry
+        } finally {
+          dashboardInFlight.delete(cacheKey)
+        }
+      })()
+      dashboardInFlight.set(cacheKey, inFlight)
+    }
+
+    const resolved = await inFlight
+    analytics = resolved.analytics
+    savedReports = resolved.savedReports
+    recentPoints = resolved.recentPoints
+  }
 
   // Check if workspace has any datasets
   if (analytics.datasets.length === 0) {

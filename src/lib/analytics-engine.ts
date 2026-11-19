@@ -11,6 +11,11 @@ export interface AnalyticsFilter {
   startDate?: Date
   endDate?: Date
   categories?: string[]
+  cacheIdentity?: {
+    range?: string
+    startDate?: string
+    endDate?: string
+  }
 }
 
 export interface KpiSummary {
@@ -400,30 +405,37 @@ export async function computeWorkspaceAnalytics(filter: AnalyticsFilter) {
   }
 }
 
-export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
-  if (typeof unstable_cache !== 'function') {
-    return computeWorkspaceAnalytics(filter)
-  }
-
-  const orgId = filter.organizationId
-  const workspaceId = filter.workspaceId || 'all'
-  const datasetId = filter.datasetId || 'all'
-  const startStr = filter.startDate ? filter.startDate.toISOString() : 'none'
-  const endStr = filter.endDate ? filter.endDate.toISOString() : 'none'
+export function getWorkspaceAnalyticsCacheKey(filter: AnalyticsFilter): string[] {
+  const startStr = filter.cacheIdentity
+    ? filter.cacheIdentity.startDate || 'none'
+    : filter.startDate?.toISOString() || 'none'
+  const endStr = filter.cacheIdentity
+    ? filter.cacheIdentity.endDate || 'none'
+    : filter.endDate?.toISOString() || 'none'
   const catStr =
     filter.categories && filter.categories.length > 0
       ? [...filter.categories].sort().join(',')
       : 'all'
 
-  const cacheKey = [
+  return [
     'workspace-analytics',
-    orgId,
-    workspaceId,
-    datasetId,
+    filter.organizationId,
+    filter.workspaceId || 'all',
+    filter.datasetId || 'all',
+    filter.cacheIdentity?.range || 'resolved',
     startStr,
     endStr,
     catStr,
   ]
+}
+
+export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
+  if (typeof unstable_cache !== 'function') {
+    return computeWorkspaceAnalytics(filter)
+  }
+
+  const workspaceId = filter.workspaceId || 'all'
+  const cacheKey = getWorkspaceAnalyticsCacheKey(filter)
 
   const cachedFn = unstable_cache(
     async () => computeWorkspaceAnalytics(filter),
@@ -433,7 +445,7 @@ export async function getWorkspaceAnalytics(filter: AnalyticsFilter) {
       tags: [
         'analytics',
         `analytics-${workspaceId}`,
-        `analytics-org-${orgId}`,
+        `analytics-org-${filter.organizationId}`,
       ],
     }
   )

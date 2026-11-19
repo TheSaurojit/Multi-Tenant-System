@@ -371,7 +371,7 @@ When running `npm run db:seed`, the following demo accounts are created with pas
 | `npm run build` | Compiles Prisma client and builds the production Next.js application |
 | `npm run start` | Runs the compiled production build |
 | `npm run lint` | Runs ESLint to check code quality |
-| `npm test` | Runs the automated 124-test suite (CSV Parsing, RBAC, Rate Limiting, Plan Quotas, Transactional Emails) |
+| `npm test` | Runs the automated test suite (CSV parsing, RBAC, rate limiting, plan quotas, analytics cache identity, and more) |
 | `npm run postinstall` | Generates Prisma Client (`prisma generate`) automatically upon `npm install` |
 | `npm run db:up` | Starts the local PostgreSQL container via Docker Compose |
 | `npm run db:down` | Stops the local PostgreSQL container |
@@ -379,6 +379,12 @@ When running `npm run db:seed`, the following demo accounts are created with pas
 | `npm run db:deploy` | Applies production migrations non-interactively (`prisma migrate deploy`) |
 | `npm run db:seed` | Resets and seeds the database with standard demo users, orgs, and datasets |
 | `npm run db:studio` | Launches Prisma Studio GUI on `http://localhost:5555` to view/edit database records |
+
+## k6 Performance Test
+
+Run `scripts/k6-load-test.js` with k6 against a production build (`npm run build`, then `npm start`) and representative database. The default scenario ramps to 50 VUs and sends a 90% dashboard / 10% CSV export mix. The test requires `SESSION_TOKENS` to be a JSON array containing at least one distinct, valid session token per VU; all test users should have export access in the selected organization and workspace. Supply it with `-e SESSION_TOKENS=...` along with `BASE_URL`, `ACTIVE_ORG`, and `ACTIVE_WORKSPACE` as needed. Keep tokens out of source control and logs.
+
+The thresholds require p95 below 2,000 ms for the combined HTTP requests, dashboard requests, and complete synchronous CSV downloads. Export checks validate the CSV response, and any failed or rate-limited request fails the test. The export path defaults to `range=last30`; run against data that produces representative CSV sizes.
 
 ---
 

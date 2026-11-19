@@ -15,6 +15,7 @@ function VerifyEmailContent() {
   const emailParam = searchParams.get('email') || ''
   const from = searchParams.get('from') || ''
   const justSent = searchParams.get('sent') === 'true'
+  const emailFailed = searchParams.get('emailFailed') === 'true'
 
   const [resendEmail, setResendEmail] = useState(emailParam)
   const [verifying, setVerifying] = useState(false)
@@ -174,10 +175,18 @@ function VerifyEmailContent() {
 
       <div>
         <h3 className="text-base font-semibold text-white">
-          {justSent ? 'Check Your Inbox' : 'Verify Your Email Address'}
+          {emailFailed
+            ? 'Finish Activating Your Account'
+            : justSent
+            ? 'Check Your Inbox'
+            : 'Verify Your Email Address'}
         </h3>
         <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
-          {resendEmail ? (
+          {emailFailed ? (
+            <>
+              Your workspace was registered for <strong className="text-indigo-400">{resendEmail}</strong>, but we were unable to deliver the initial email.
+            </>
+          ) : resendEmail ? (
             <>
               We sent a verification link to <strong className="text-indigo-400">{resendEmail}</strong>. Please check your inbox and click the link to activate your account.
             </>
@@ -186,6 +195,15 @@ function VerifyEmailContent() {
           )}
         </p>
       </div>
+
+      {emailFailed && (
+        <div className="p-3.5 rounded-lg bg-amber-950/60 border border-amber-800/80 text-amber-200 text-xs text-left">
+          <p className="font-semibold text-amber-300 mb-1">Account &amp; Workspace Created</p>
+          <p className="text-amber-200/90 leading-relaxed">
+            The verification email could not be delivered on signup. Click below to generate and send a fresh verification link to your email.
+          </p>
+        </div>
+      )}
 
       {resendMessage && (
         <div className="p-3 rounded-lg bg-emerald-950/60 border border-emerald-800/80 text-emerald-300 text-xs">
@@ -202,7 +220,7 @@ function VerifyEmailContent() {
       <form onSubmit={handleResend} className="space-y-3 pt-3 text-left">
         <div>
           <label className="block text-xs font-medium text-zinc-300 mb-1">
-            Didn&apos;t receive the email? Enter address to resend:
+            {emailFailed ? 'Confirm your email address:' : "Didn't receive the email? Enter address to resend:"}
           </label>
           <input
             type="email"
@@ -214,9 +232,15 @@ function VerifyEmailContent() {
           />
         </div>
 
-        <Button type="submit" variant="secondary" size="md" className="w-full" isLoading={resending}>
+        <Button
+          type="submit"
+          variant={emailFailed ? 'primary' : 'secondary'}
+          size="md"
+          className="w-full"
+          isLoading={resending}
+        >
           <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-          Resend Verification Link
+          {emailFailed ? 'Send Verification Link' : 'Resend Verification Link'}
         </Button>
       </form>
 

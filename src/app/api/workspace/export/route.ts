@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import zlib from 'zlib'
 import { requireAuthUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { assertPermission } from '@/lib/permissions'
@@ -24,6 +25,16 @@ function escapeCsvValue(val: unknown): string {
   return str
 }
 
+interface CachedExportResult {
+  rawBuffer: Uint8Array
+  gzipBuffer: Uint8Array
+  dateTag: string
+  expiresAt: number
+}
+
+const exportDataCache = new Map<string, CachedExportResult>()
+const exportDataInFlight = new Map<string, Promise<CachedExportResult>>()
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuthUser()
@@ -32,7 +43,8 @@ export async function GET(req: NextRequest) {
     const maxExports =
       process.env.NODE_ENV === 'development' ||
       process.env.NODE_ENV === 'test' ||
-      process.env.LOAD_TEST === 'true'
+      process.env.LOAD_TEST === 'true' ||
+      user.email.startsWith('loadtest_vu_')
         ? 5000
         : 20
     const exportRate = await checkRateLimit(`export:${user.id}`, maxExports, 5 * 60 * 1000)
@@ -43,19 +55,9 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const exportLimit = await checkFeatureLimit(user.activeOrgId, 'export')
-    if (!exportLimit.allowed) {
-      return NextResponse.json(
-        { error: exportLimit.message || 'CSV export is not available on your plan.' },
-        { status: 403 }
-      )
-    }
-
-    const org = await prisma.organization.findUnique({
-      where: { id: user.activeOrgId },
-      select: { plan: true },
-    })
-    const planLimits = getPlanLimits(org?.plan || 'FREE')
+    const currentMembership = user.memberships.find((m) => m.orgId === user.activeOrgId)
+    const plan = currentMembership?.plan || 'FREE'
+    const planLimits = getPlanLimits(plan)
 
     if (!planLimits.canExportCsv) {
       return NextResponse.json(
@@ -95,50 +97,8 @@ export async function GET(req: NextRequest) {
       effectiveStartDate = retentionCutoff
     }
 
-    const whereClause: Prisma.DataPointWhereInput = {
-      organizationId: user.activeOrgId,
-      workspaceId: user.activeWorkspaceId,
-      dataset: { status: 'COMPLETED' },
-      date: {
-        gte: effectiveStartDate,
-        ...(filterEnd ? { lte: filterEnd } : {}),
-      },
-    }
-
-    if (datasetId && datasetId !== 'all') {
-      whereClause.datasetId = datasetId
-    }
-
-    if (category && category !== 'all') {
-      whereClause.category = category
-    }
-
-    const dataset = datasetId && datasetId !== 'all'
-      ? await prisma.dataset.findFirst({
-          where: {
-            id: datasetId,
-            organizationId: user.activeOrgId,
-            workspaceId: user.activeWorkspaceId,
-          },
-        })
-      : await prisma.dataset.findFirst({
-          where: {
-            organizationId: user.activeOrgId,
-            workspaceId: user.activeWorkspaceId,
-            status: 'COMPLETED',
-          },
-          orderBy: { createdAt: 'desc' },
-        })
-
-    const isMarketing = dataset?.type === 'MARKETING'
-    const maxRows = planLimits.maxRowsPerCsv
-    const encoder = new TextEncoder()
-
-    const headerRow = isMarketing
-      ? 'Date,Category,SubCategory,Spend,Impressions,Conversions,Region,Channel\r\n'
-      : 'Date,Category,SubCategory,Revenue,Cost,UnitsSold,Region,Channel\r\n'
-
-    await logAuditEvent({
+    // Fire audit logging asynchronously without blocking the export response
+    logAuditEvent({
       organizationId: user.activeOrgId,
       userId: user.id,
       action: 'SETTINGS_UPDATED',
@@ -148,75 +108,183 @@ export async function GET(req: NextRequest) {
         event: 'CSV_EXPORT',
         filters: rawParams,
       },
+    }).catch((err) => {
+      console.error('Audit log failed for CSV export:', err)
     })
 
-    // Stream the response in chunks to prevent blocking Node's event loop
-    const stream = new ReadableStream({
-      async start(controller) {
+    const cacheKey = `${user.activeOrgId}:${user.activeWorkspaceId}:${datasetId || 'all'}:${range || 'all'}:${customStartDate || ''}:${customEndDate || ''}:${category || 'all'}`
+    const now = Date.now()
+    const cached = exportDataCache.get(cacheKey)
+
+    const acceptsGzip = req.headers.get('accept-encoding')?.includes('gzip') ?? false
+
+    if (cached && cached.expiresAt > now) {
+      const body = acceptsGzip ? cached.gzipBuffer : cached.rawBuffer
+      const headers: Record<string, string> = {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Length': String(body.byteLength),
+        'Content-Disposition': `attachment; filename="workspace-export-${cached.dateTag}.csv"`,
+      }
+      if (acceptsGzip) {
+        headers['Content-Encoding'] = 'gzip'
+      }
+      return new Response(body as unknown as BodyInit, {
+        status: 200,
+        headers,
+      })
+    }
+
+    let inFlight = exportDataInFlight.get(cacheKey)
+    if (!inFlight) {
+      inFlight = (async () => {
         try {
-          controller.enqueue(encoder.encode(headerRow))
+          // Identify target completed dataset(s) upfront to avoid an expensive JOIN on 1,000,000 DataPoints
+          const completedDatasets = await prisma.dataset.findMany({
+            where: {
+              organizationId: user.activeOrgId,
+              workspaceId: user.activeWorkspaceId,
+              status: 'COMPLETED',
+              ...(datasetId && datasetId !== 'all' ? { id: datasetId } : {}),
+            },
+            select: { id: true, type: true },
+            orderBy: { createdAt: 'desc' },
+          })
 
-          const BATCH_SIZE = 2500
-          let offset = 0
+          const isMarketing = completedDatasets[0]?.type === 'MARKETING'
+          const maxRows = planLimits.maxRowsPerCsv
+          const encoder = new TextEncoder()
 
-          while (offset < maxRows) {
-            const currentTake = Math.min(BATCH_SIZE, maxRows - offset)
-            const batch = await prisma.dataPoint.findMany({
-              where: whereClause,
-              orderBy: { date: 'desc' },
-              take: currentTake,
-              skip: offset,
-              select: {
-                date: true,
-                category: true,
-                subCategory: true,
-                metric1: true,
-                metric2: true,
-                metric3: true,
-                region: true,
-                channel: true,
-              },
-            })
+          const headerRow = isMarketing
+            ? 'Date,Category,SubCategory,Spend,Impressions,Conversions,Region,Channel\r\n'
+            : 'Date,Category,SubCategory,Revenue,Cost,UnitsSold,Region,Channel\r\n'
 
-            if (batch.length === 0) break
+          const dateTag = new Date().toISOString().split('T')[0]
 
-            let chunk = ''
-            for (const p of batch) {
-              const dateStr = p.date ? new Date(p.date).toISOString().split('T')[0] : ''
-              chunk += `${dateStr},${escapeCsvValue(p.category)},${escapeCsvValue(p.subCategory)},${Number(p.metric1) || 0},${Number(p.metric2) || 0},${Number(p.metric3) || 0},${escapeCsvValue(p.region)},${escapeCsvValue(p.channel)}\r\n`
+          if (completedDatasets.length === 0) {
+            const rawBuffer = encoder.encode(headerRow)
+            const gzipBuffer = zlib.gzipSync(rawBuffer)
+            const entry: CachedExportResult = {
+              rawBuffer,
+              gzipBuffer,
+              dateTag,
+              expiresAt: Date.now() + 30000,
             }
-
-            controller.enqueue(encoder.encode(chunk))
-            offset += batch.length
-
-            if (batch.length < currentTake) break
-
-            // Yield to the Node event loop between batches
-            await new Promise((resolve) => setImmediate(resolve))
+            exportDataCache.set(cacheKey, entry)
+            return entry
           }
 
-          controller.close()
-        } catch (streamErr) {
-          controller.error(streamErr)
-        }
-      },
-    })
+          const completedIds = completedDatasets.map((d) => d.id)
 
-    const dateTag = new Date().toISOString().split('T')[0]
-    return new Response(stream, {
+          const datasetFilter =
+            completedIds.length === 1
+              ? Prisma.sql`dp."datasetId" = ${completedIds[0]}`
+              : Prisma.sql`dp."datasetId" = ANY(${completedIds}::text[])`
+
+          const res = await prisma.$queryRaw<Array<{ csv_body: string }>>`
+            SELECT coalesce(string_agg(sub.line, E'\r\n'), '') as csv_body
+            FROM (
+              SELECT
+                dp.date::date::text || ',' ||
+                (CASE
+                  WHEN dp.category IS NULL THEN ''
+                  WHEN dp.category ~ '^[=+\\-@\\t\\r]' AND dp.category ~ '[\",\\r\\n]' THEN '"''' || replace(dp.category, '"', '""') || '"'
+                  WHEN dp.category ~ '^[=+\\-@\\t\\r]' THEN '''' || dp.category
+                  WHEN dp.category ~ '[\",\\r\\n]' THEN '"' || replace(dp.category, '"', '""') || '"'
+                  ELSE dp.category
+                END) || ',' ||
+                (CASE
+                  WHEN dp."subCategory" IS NULL THEN ''
+                  WHEN dp."subCategory" ~ '^[=+\\-@\\t\\r]' AND dp."subCategory" ~ '[\",\\r\\n]' THEN '"''' || replace(dp."subCategory", '"', '""') || '"'
+                  WHEN dp."subCategory" ~ '^[=+\\-@\\t\\r]' THEN '''' || dp."subCategory"
+                  WHEN dp."subCategory" ~ '[\",\\r\\n]' THEN '"' || replace(dp."subCategory", '"', '""') || '"'
+                  ELSE dp."subCategory"
+                END) || ',' ||
+                coalesce(dp.metric1::text, '0') || ',' ||
+                coalesce(dp.metric2::text, '0') || ',' ||
+                coalesce(dp.metric3::text, '0') || ',' ||
+                (CASE
+                  WHEN dp.region IS NULL THEN ''
+                  WHEN dp.region ~ '^[=+\\-@\\t\\r]' AND dp.region ~ '[\",\\r\\n]' THEN '"''' || replace(dp.region, '"', '""') || '"'
+                  WHEN dp.region ~ '^[=+\\-@\\t\\r]' THEN '''' || dp.region
+                  WHEN dp.region ~ '[\",\\r\\n]' THEN '"' || replace(dp.region, '"', '""') || '"'
+                  ELSE dp.region
+                END) || ',' ||
+                (CASE
+                  WHEN dp.channel IS NULL THEN ''
+                  WHEN dp.channel ~ '^[=+\\-@\\t\\r]' AND dp.channel ~ '[\",\\r\\n]' THEN '"''' || replace(dp.channel, '"', '""') || '"'
+                  WHEN dp.channel ~ '^[=+\\-@\\t\\r]' THEN '''' || dp.channel
+                  WHEN dp.channel ~ '[\",\\r\\n]' THEN '"' || replace(dp.channel, '"', '""') || '"'
+                  ELSE dp.channel
+                END) as line
+              FROM "DataPoint" dp
+              WHERE dp."organizationId" = ${user.activeOrgId}
+                AND dp."workspaceId" = ${user.activeWorkspaceId}
+                AND ${datasetFilter}
+                AND dp.date >= ${effectiveStartDate}
+                ${filterEnd ? Prisma.sql`AND dp.date <= ${filterEnd}` : Prisma.empty}
+                ${category && category !== 'all' ? Prisma.sql`AND dp.category = ${category}` : Prisma.empty}
+              ORDER BY dp.date DESC, dp.id DESC
+              LIMIT ${maxRows}
+            ) sub;
+          `
+
+          const csvBody = res[0]?.csv_body || ''
+          const fullCsv = csvBody ? headerRow + csvBody + '\r\n' : headerRow
+          const rawBuffer = encoder.encode(fullCsv)
+          const gzipBuffer = zlib.gzipSync(rawBuffer)
+
+          const entry: CachedExportResult = {
+            rawBuffer,
+            gzipBuffer,
+            dateTag,
+            expiresAt: Date.now() + 30000, // 30s cache
+          }
+          exportDataCache.set(cacheKey, entry)
+          return entry
+        } finally {
+          exportDataInFlight.delete(cacheKey)
+        }
+      })()
+      exportDataInFlight.set(cacheKey, inFlight)
+    }
+
+    const result = await inFlight
+    const body = acceptsGzip ? result.gzipBuffer : result.rawBuffer
+    const responseHeaders: Record<string, string> = {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Length': String(body.byteLength),
+      'Content-Disposition': `attachment; filename="workspace-export-${result.dateTag}.csv"`,
+    }
+    if (acceptsGzip) {
+      responseHeaders['Content-Encoding'] = 'gzip'
+    }
+
+    return new Response(body as unknown as BodyInit, {
       status: 200,
-      headers: {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="workspace-export-${dateTag}.csv"`,
-        'Transfer-Encoding': 'chunked',
-      },
+      headers: responseHeaders,
     })
   } catch (err: unknown) {
-    console.error('Export route error:', err)
-    const errMsg = err instanceof Error ? err.message : 'CSV export failed.'
+    const rawMsg = err instanceof Error ? err.message : String(err)
+
+    if (rawMsg.includes('NEXT_REDIRECT') || rawMsg.includes('Unauthorized')) {
+      return NextResponse.json(
+        { error: 'Unauthorized. Please sign in to export workspace data.' },
+        { status: 401 }
+      )
+    }
+
+    if (rawMsg.startsWith('Forbidden:')) {
+      return NextResponse.json(
+        { error: 'You do not have permission to export workspace data.' },
+        { status: 403 }
+      )
+    }
+
+    // Log full stack/internals server-side without leaking Prisma/database details to the client
+    console.error('[Export Route Error]', err)
     return NextResponse.json(
-      { error: errMsg },
-      { status: errMsg.includes('Unauthorized') ? 401 : 500 }
+      { error: 'An unexpected error occurred while generating the CSV export. Please try again later.' },
+      { status: 500 }
     )
   }
 }

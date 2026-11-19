@@ -14,7 +14,11 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx -r ./scripts/mock-server-only.js prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "loadtest:users": "tsx -r ./scripts/mock-server-only.js scripts/create-loadtest-users.ts",
+    "loadtest:seed-1m": "tsx -r ./scripts/mock-server-only.js scripts/seed-1m-loadtest.ts",
+    "loadtest:run": "k6 run scripts/k6-load-test.js",
+    "loadtest:quick": "k6 run -e RAMP_DURATION=3s -e DURATION=10s -e COOLDOWN_DURATION=2s scripts/k6-load-test.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
@@ -25,7 +29,7 @@
     "dotenv": "^18.0.4",
     "jose": "^6.2.12",
     "lucide-react": "^1.46.0",
-    "next": "^16.4.1",
+    "next": "^16.4.6",
     "papaparse": "^5.7.0",
     "pg": "^8.23.0",
     "react": "19.2.8",
